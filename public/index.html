@@ -21,13 +21,13 @@
   .status-bar.calling .status-dot { background: #ffc107; animation: pulse 1s infinite; }
   .status-bar.connected .status-dot { background: #28a745; animation: pulse 1s infinite; }
   .status-bar.error .status-dot { background: #dc3545; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes pulse { 0%,100%{opacity:1;}50%{opacity:0.3;} }
   .timer { text-align: center; font-size: 28px; font-weight: 300; color: #1a1a2e; margin-bottom: 16px; display: none; letter-spacing: 2px; }
   .buttons { display: flex; gap: 10px; }
   .btn-call { flex: 1; padding: 14px; background: #28a745; color: white; border: none; border-radius: 10px; font-size: 15px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
   .btn-call:hover:not(:disabled) { background: #218838; transform: translateY(-1px); }
   .btn-call:disabled { background: #ccc; cursor: not-allowed; transform: none; }
-  .btn-hangup { flex: 1; padding: 14px; background: #dc3545; color: white; border: none; border-radius: 10px; font-size: 15px; cursor: pointer; font-weight: 600; display: none; transition: all 0.2s; }
+  .btn-hangup { flex: 1; padding: 14px; background: #dc3545; color: white; border: none; border-radius: 10px; font-size: 15px; cursor: pointer; font-weight: 600; display: none; }
   .btn-hangup:hover { background: #c82333; }
   .btn-mute { padding: 14px 18px; background: #f0f4ff; color: #4a6cf7; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; display: none; }
   .btn-mute.muted { background: #4a6cf7; color: white; }
@@ -61,7 +61,7 @@
 
 <script>
   const SERVER = 'https://plivo-server.onrender.com';
-  let plivoBrowser = null;
+  let plivoBrowserSdk = null;
   let timerInterval = null;
   let seconds = 0;
   let isMuted = false;
@@ -93,54 +93,73 @@
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      plivoBrowser = new Plivo({
-        debug: "ALL",
+      const options = {
+        debug: 'ERROR',
         permOnClick: true,
-        enableTracking: true
-      });
+        enableTracking: false,
+        closeProtection: false
+      };
 
-      plivoBrowser.on('onLogin', function() {
+      plivoBrowserSdk = new window.Plivo(options);
+
+      plivoBrowserSdk.client.on('onLogin', function() {
         document.getElementById('sdkStatus').textContent = '🟢 Connected';
         setStatus('Ready to call', 'ready');
         document.getElementById('btnCall').disabled = false;
       });
 
-      plivoBrowser.on('onLoginFailed', function(reason) {
+      plivoBrowserSdk.client.on('onLoginFailed', function(cause) {
         document.getElementById('sdkStatus').textContent = '🔴 Login failed';
-        setStatus('Login failed: ' + reason, 'error');
+        setStatus('Login failed: ' + cause, 'error');
       });
 
-      plivoBrowser.on('onCallAnswered', function() {
+      plivoBrowserSdk.client.on('onCalling', function() {
+        setStatus('Calling...', 'calling');
+      });
+
+      plivoBrowserSdk.client.on('onCallRemoteRinging', function() {
+        setStatus('Ringing...', 'calling');
+      });
+
+      plivoBrowserSdk.client.on('onCallAnswered', function() {
         setStatus('Connected ✓', 'connected');
         document.getElementById('btnMute').style.display = 'block';
         startTimer();
       });
 
-      plivoBrowser.on('onCallTerminated', function() {
-        setStatus('Call ended', 'ready');
+      plivoBrowserSdk.client.on('onCallTerminated', function() {
+        setStatus('Ready to call', 'ready');
         resetUI();
       });
 
-      plivoBrowser.login(data.username, 'Agent@1234');
+      plivoBrowserSdk.client.on('onCallFailed', function(cause) {
+        setStatus('Call failed: ' + cause, 'error');
+        resetUI();
+      });
+
+      plivoBrowserSdk.client.on('onWebrtcNotSupported', function() {
+        setStatus('WebRTC not supported in this browser', 'error');
+      });
+
+      plivoBrowserSdk.client.login(data.username, 'Agent@1234');
 
     } catch(err) {
       document.getElementById('sdkStatus').textContent = '🔴 Error';
-      setStatus('Server error: ' + err.message, 'error');
+      setStatus('Error: ' + err.message, 'error');
     }
   }
 
   function makeCall() {
-    if (!plivoBrowser || !contactPhone) return;
+    if (!plivoBrowserSdk || !contactPhone) return;
     let number = contactPhone.replace(/\D/g, '');
     if (number.length === 10) number = '91' + number;
-    setStatus('Calling...', 'calling');
     document.getElementById('btnCall').style.display = 'none';
     document.getElementById('btnHangup').style.display = 'block';
-    plivoBrowser.call(number, {});
+    plivoBrowserSdk.client.call(number, {});
   }
 
   function hangup() {
-    if (plivoBrowser) plivoBrowser.hangup();
+    if (plivoBrowserSdk) plivoBrowserSdk.client.hangup();
     resetUI();
     setStatus('Ready to call', 'ready');
   }
@@ -148,17 +167,17 @@
   function toggleMute() {
     isMuted = !isMuted;
     if (isMuted) {
-      plivoBrowser.mute();
+      plivoBrowserSdk.client.mute();
       document.getElementById('btnMute').textContent = '🔇';
       document.getElementById('btnMute').classList.add('muted');
     } else {
-      plivoBrowser.unmute();
+      plivoBrowserSdk.client.unmute();
       document.getElementById('btnMute').textContent = '🎤';
       document.getElementById('btnMute').classList.remove('muted');
     }
   }
 
-  function setStatus(msg, type = '') {
+  function setStatus(msg, type='') {
     document.getElementById('statusText').textContent = msg;
     document.getElementById('statusBar').className = 'status-bar ' + type;
   }
