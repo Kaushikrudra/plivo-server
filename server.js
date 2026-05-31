@@ -34,6 +34,25 @@ app.get('/token', (req, res) => {
   }
 });
 
+
+
+
+app.get('/token', (req, res) => {
+  try {
+    const jwt = require('jsonwebtoken');
+    const payload = {
+      iss: process.env.PLIVO_AUTH_ID,
+      sub: process.env.PLIVO_ENDPOINT_USERNAME,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600
+    };
+    const token = jwt.sign(payload, process.env.PLIVO_AUTH_TOKEN);
+    res.json({ token, username: process.env.PLIVO_ENDPOINT_USERNAME });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Answer URL — Browser SDK call ke liye
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
