@@ -4,58 +4,81 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Plivo Call</title>
+<script src="https://cdn.plivo.com/sdk/browser/v2/plivo.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-  .softphone { background: white; border-radius: 12px; padding: 24px; width: 320px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
-  .header { text-align: center; margin-bottom: 20px; }
-  .header h2 { color: #333; font-size: 18px; }
-  .contact-info { background: #f0f4ff; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: center; }
-  .contact-name { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 4px; }
-  .contact-number { font-size: 20px; color: #4a6cf7; font-weight: bold; }
-  .status { text-align: center; padding: 8px; margin-bottom: 16px; border-radius: 6px; font-size: 14px; color: #666; background: #f9f9f9; }
-  .status.calling { background: #fff3cd; color: #856404; }
-  .status.connected { background: #d4edda; color: #155724; }
-  .status.error { background: #f8d7da; color: #721c24; }
-  .btn-call { width: 100%; padding: 14px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 10px; }
-  .btn-call:hover { background: #218838; }
-  .btn-call:disabled { background: #ccc; cursor: not-allowed; }
-  .btn-hangup { width: 100%; padding: 14px; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; display: none; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4ff; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .softphone { background: white; border-radius: 16px; padding: 28px; width: 340px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+  .header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .header h2 { color: #1a1a2e; font-size: 18px; }
+  .avatar { width: 48px; height: 48px; border-radius: 50%; background: #4a6cf7; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; }
+  .contact-info { background: #f8faff; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .contact-name { font-size: 17px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
+  .contact-number { font-size: 15px; color: #4a6cf7; font-weight: 500; }
+  .status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; background: #f9f9f9; color: #666; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+  .status-bar.ready .status-dot { background: #28a745; }
+  .status-bar.calling .status-dot { background: #ffc107; animation: pulse 1s infinite; }
+  .status-bar.connected .status-dot { background: #28a745; animation: pulse 1s infinite; }
+  .status-bar.error .status-dot { background: #dc3545; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .timer { text-align: center; font-size: 28px; font-weight: 300; color: #1a1a2e; margin-bottom: 16px; display: none; letter-spacing: 2px; }
+  .buttons { display: flex; gap: 10px; }
+  .btn-call { flex: 1; padding: 14px; background: #28a745; color: white; border: none; border-radius: 10px; font-size: 15px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+  .btn-call:hover:not(:disabled) { background: #218838; transform: translateY(-1px); }
+  .btn-call:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+  .btn-hangup { flex: 1; padding: 14px; background: #dc3545; color: white; border: none; border-radius: 10px; font-size: 15px; cursor: pointer; font-weight: 600; display: none; transition: all 0.2s; }
   .btn-hangup:hover { background: #c82333; }
-  .timer { text-align: center; font-size: 24px; color: #333; margin-bottom: 16px; display: none; }
+  .btn-mute { padding: 14px 18px; background: #f0f4ff; color: #4a6cf7; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; display: none; }
+  .btn-mute.muted { background: #4a6cf7; color: white; }
+  .sdk-status { text-align: center; font-size: 11px; color: #aaa; margin-top: 12px; }
 </style>
 </head>
 <body>
 <div class="softphone">
   <div class="header">
-    <h2>📞 Plivo Call</h2>
+    <div class="avatar" id="avatar">?</div>
+    <div>
+      <h2>Plivo Call</h2>
+      <div class="sdk-status" id="sdkStatus">Initializing...</div>
+    </div>
   </div>
   <div class="contact-info">
     <div class="contact-name" id="contactName">Loading...</div>
     <div class="contact-number" id="contactNumber">--</div>
   </div>
-  <div class="status" id="status">Ready to call</div>
+  <div class="status-bar" id="statusBar">
+    <div class="status-dot"></div>
+    <span id="statusText">Connecting to server...</span>
+  </div>
   <div class="timer" id="timer">00:00</div>
-  <button class="btn-call" id="btnCall" onclick="makeCall()">📞 Call</button>
-  <button class="btn-hangup" id="btnHangup" onclick="hangup()">📵 Hang Up</button>
+  <div class="buttons">
+    <button class="btn-call" id="btnCall" onclick="makeCall()" disabled>📞 Call</button>
+    <button class="btn-mute" id="btnMute" onclick="toggleMute()">🎤</button>
+    <button class="btn-hangup" id="btnHangup" onclick="hangup()">📵 Hang Up</button>
+  </div>
 </div>
 
 <script>
   const SERVER = 'https://plivo-server.onrender.com';
-  let callUuid = null;
+  let plivoBrowser = null;
+  let callObj = null;
   let timerInterval = null;
   let seconds = 0;
+  let isMuted = false;
+  let contactPhone = '';
 
-  // Zoho CRM se contact info lo
+  // Zoho SDK
   function getContactInfo() {
     try {
       ZOHO.embeddedApp.on("PageLoad", function(data) {
         const name = data.Name || 'Contact';
-        const phone = data.Phone || data.Mobile || '';
+        const phone = data.Phone || data.Mobile || data.mobile || '';
         document.getElementById('contactName').textContent = name;
-        document.getElementById('contactNumber').textContent = phone || 'No number found';
+        document.getElementById('contactNumber').textContent = phone || 'No number';
+        document.getElementById('avatar').textContent = name.charAt(0).toUpperCase();
+        contactPhone = phone;
         if (!phone) {
-          document.getElementById('btnCall').disabled = true;
           setStatus('No phone number found', 'error');
         }
       });
@@ -64,56 +87,91 @@
       // Testing mode
       document.getElementById('contactName').textContent = 'Test Contact';
       document.getElementById('contactNumber').textContent = '+917509955205';
+      document.getElementById('avatar').textContent = 'T';
+      contactPhone = '+917509955205';
+    }
+  }
+
+  // Plivo Browser SDK init
+  async function initPlivo() {
+    try {
+      const res = await fetch(`${SERVER}/token`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      plivoBrowser = new Plivo.Phone();
+
+      plivoBrowser.on('onLogin', function() {
+        document.getElementById('sdkStatus').textContent = '🟢 Connected';
+        setStatus('Ready to call', 'ready');
+        document.getElementById('btnCall').disabled = false;
+      });
+
+      plivoBrowser.on('onLoginFailed', function() {
+        document.getElementById('sdkStatus').textContent = '🔴 Login failed';
+        setStatus('SDK login failed', 'error');
+      });
+
+      plivoBrowser.on('onCallAnswered', function() {
+        setStatus('Connected ✓', 'connected');
+        document.getElementById('btnMute').style.display = 'block';
+        startTimer();
+      });
+
+      plivoBrowser.on('onCallTerminated', function() {
+        setStatus('Call ended', 'ready');
+        resetUI();
+      });
+
+      plivoBrowser.on('onMediaConnected', function() {
+        console.log('Media connected');
+      });
+
+      plivoBrowser.client.login(data.username, 'Agent@1234');
+
+    } catch(err) {
+      document.getElementById('sdkStatus').textContent = '🔴 Error';
+      setStatus('Server error: ' + err.message, 'error');
+    }
+  }
+
+  function makeCall() {
+    if (!plivoBrowser || !contactPhone) return;
+
+    let number = contactPhone.replace(/\D/g, '');
+    if (number.length === 10) number = '91' + number;
+
+    setStatus('Calling...', 'calling');
+    document.getElementById('btnCall').style.display = 'none';
+    document.getElementById('btnHangup').style.display = 'block';
+
+    const extraHeaders = { 'X-PH-To': number };
+    callObj = plivoBrowser.client.call(number, extraHeaders);
+  }
+
+  function hangup() {
+    if (plivoBrowser) plivoBrowser.client.hangup();
+    resetUI();
+    setStatus('Call ended', 'ready');
+  }
+
+  function toggleMute() {
+    if (!plivoBrowser) return;
+    isMuted = !isMuted;
+    if (isMuted) {
+      plivoBrowser.client.mute();
+      document.getElementById('btnMute').textContent = '🔇';
+      document.getElementById('btnMute').classList.add('muted');
+    } else {
+      plivoBrowser.client.unmute();
+      document.getElementById('btnMute').textContent = '🎤';
+      document.getElementById('btnMute').classList.remove('muted');
     }
   }
 
   function setStatus(msg, type = '') {
-    const el = document.getElementById('status');
-    el.textContent = msg;
-    el.className = 'status ' + type;
-  }
-
-  async function makeCall() {
-    const number = document.getElementById('contactNumber').textContent.replace(/\s+/g, '');
-    if (!number || number === '--') return;
-
-    document.getElementById('btnCall').disabled = true;
-    document.getElementById('btnHangup').style.display = 'block';
-    setStatus('Calling...', 'calling');
-
-    try {
-      const res = await fetch(`${SERVER}/make-call`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: number })
-      });
-      const data = await res.json();
-      if (data.success) {
-        callUuid = data.uuid;
-        setStatus('Connected ✓', 'connected');
-        startTimer();
-      } else {
-        setStatus('Call failed: ' + (data.error || 'Unknown error'), 'error');
-        resetUI();
-      }
-    } catch(err) {
-      setStatus('Server error: ' + err.message, 'error');
-      resetUI();
-    }
-  }
-
-  async function hangup() {
-    if (callUuid) {
-      try {
-        await fetch(`${SERVER}/hangup-call`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uuid: callUuid })
-        });
-      } catch(e) {}
-    }
-    resetUI();
-    setStatus('Call ended', '');
+    document.getElementById('statusText').textContent = msg;
+    document.getElementById('statusBar').className = 'status-bar ' + type;
   }
 
   function startTimer() {
@@ -128,14 +186,17 @@
   }
 
   function resetUI() {
+    document.getElementById('btnCall').style.display = 'block';
     document.getElementById('btnCall').disabled = false;
     document.getElementById('btnHangup').style.display = 'none';
+    document.getElementById('btnMute').style.display = 'none';
     document.getElementById('timer').style.display = 'none';
     clearInterval(timerInterval);
-    callUuid = null;
+    isMuted = false;
   }
 
   getContactInfo();
+  initPlivo();
 </script>
 <script src="https://live.zwidgets.com/js-sdk/1.0.5/ZohoEmbeddedAppSDK.min.js"></script>
 </body>

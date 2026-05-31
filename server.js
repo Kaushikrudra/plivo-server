@@ -12,57 +12,44 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
 
-// Health check
 app.get('/status', (req, res) => {
   res.json({ status: 'Plivo CRM Server Running' });
 });
 
-// Softphone UI
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Outbound call
-app.post('/make-call', async (req, res) => {
-  const { to } = req.body;
-  if (!to) return res.status(400).json({ error: 'Number required' });
-
-  // Number clean karo — sirf digits
-  let cleanNumber = to.replace(/\D/g, '');
-  
-  // India code add karo if missing
-  if (cleanNumber.length === 10) {
-    cleanNumber = '91' + cleanNumber;
-  } else if (cleanNumber.startsWith('0')) {
-    cleanNumber = '91' + cleanNumber.slice(1);
-  }
-
-  console.log(`Calling: ${cleanNumber} from ${process.env.PLIVO_NUMBER}`);
-
+// Browser SDK token
+app.get('/token', (req, res) => {
   try {
-    const response = await client.calls.create(
-      process.env.PLIVO_NUMBER,
-      cleanNumber,
-      `${process.env.RENDER_URL}/answer`
+    const token = plivo.utils.generateToken(
+      process.env.PLIVO_AUTH_ID,
+      process.env.PLIVO_AUTH_TOKEN,
+      process.env.PLIVO_ENDPOINT_USERNAME
     );
-    res.json({ success: true, uuid: response.requestUuid });
+    res.json({ token, username: process.env.PLIVO_ENDPOINT_USERNAME });
   } catch (err) {
-    console.error('Call error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Plivo answer URL — sirf connected rakho
+// Answer URL — Browser SDK call ke liye
 app.post('/answer', (req, res) => {
-  console.log('Answer webhook hit:', req.body);
+  console.log('Answer hit:', req.body);
+  const to = req.body.To || req.body.to;
   const response = new plivo.Response();
-  response.addSpeak('Please wait, connecting your call.');
-  response.addWait({ length: 60 });
+  if (to) {
+    const dial = response.addDial({ callerId: process.env.PLIVO_NUMBER });
+    dial.addNumber(to);
+  } else {
+    response.addSpeak('No destination number found.');
+  }
   res.set('Content-Type', 'text/xml');
   res.send(response.toXML());
 });
 
-// Hangup call
+// Hangup
 app.post('/hangup-call', async (req, res) => {
   const { uuid } = req.body;
   if (!uuid) return res.status(400).json({ error: 'UUID required' });
@@ -76,10 +63,3 @@ app.post('/hangup-call', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
-
-
-
-
-
