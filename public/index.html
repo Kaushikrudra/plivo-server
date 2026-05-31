@@ -11,7 +11,7 @@
   .softphone { background: white; border-radius: 16px; padding: 28px; width: 340px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
   .header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
   .header h2 { color: #1a1a2e; font-size: 18px; }
-  .avatar { width: 48px; height: 48px; border-radius: 50%; background: #4a6cf7; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; }
+  .avatar { width: 48px; height: 48px; border-radius: 50%; background: #4a6cf7; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; flex-shrink: 0; }
   .contact-info { background: #f8faff; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
   .contact-name { font-size: 17px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
   .contact-number { font-size: 15px; color: #4a6cf7; font-weight: 500; }
@@ -31,7 +31,7 @@
   .btn-hangup:hover { background: #c82333; }
   .btn-mute { padding: 14px 18px; background: #f0f4ff; color: #4a6cf7; border: none; border-radius: 10px; font-size: 18px; cursor: pointer; display: none; }
   .btn-mute.muted { background: #4a6cf7; color: white; }
-  .sdk-status { text-align: center; font-size: 11px; color: #aaa; margin-top: 12px; }
+  .sdk-status { font-size: 11px; color: #aaa; }
 </style>
 </head>
 <body>
@@ -62,13 +62,11 @@
 <script>
   const SERVER = 'https://plivo-server.onrender.com';
   let plivoBrowser = null;
-  let callObj = null;
   let timerInterval = null;
   let seconds = 0;
   let isMuted = false;
   let contactPhone = '';
 
-  // Zoho SDK
   function getContactInfo() {
     try {
       ZOHO.embeddedApp.on("PageLoad", function(data) {
@@ -78,13 +76,10 @@
         document.getElementById('contactNumber').textContent = phone || 'No number';
         document.getElementById('avatar').textContent = name.charAt(0).toUpperCase();
         contactPhone = phone;
-        if (!phone) {
-          setStatus('No phone number found', 'error');
-        }
+        if (!phone) setStatus('No phone number found', 'error');
       });
       ZOHO.embeddedApp.init();
     } catch(e) {
-      // Testing mode
       document.getElementById('contactName').textContent = 'Test Contact';
       document.getElementById('contactNumber').textContent = '+917509955205';
       document.getElementById('avatar').textContent = 'T';
@@ -92,14 +87,17 @@
     }
   }
 
-  // Plivo Browser SDK init
   async function initPlivo() {
     try {
       const res = await fetch(`${SERVER}/token`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      plivoBrowser = new Plivo.Phone();
+      plivoBrowser = new Plivo({
+        debug: "ALL",
+        permOnClick: true,
+        enableTracking: true
+      });
 
       plivoBrowser.on('onLogin', function() {
         document.getElementById('sdkStatus').textContent = '🟢 Connected';
@@ -107,9 +105,9 @@
         document.getElementById('btnCall').disabled = false;
       });
 
-      plivoBrowser.on('onLoginFailed', function() {
+      plivoBrowser.on('onLoginFailed', function(reason) {
         document.getElementById('sdkStatus').textContent = '🔴 Login failed';
-        setStatus('SDK login failed', 'error');
+        setStatus('Login failed: ' + reason, 'error');
       });
 
       plivoBrowser.on('onCallAnswered', function() {
@@ -123,11 +121,7 @@
         resetUI();
       });
 
-      plivoBrowser.on('onMediaConnected', function() {
-        console.log('Media connected');
-      });
-
-      plivoBrowser.client.login(data.username, 'Agent@1234');
+      plivoBrowser.login(data.username, 'Agent@1234');
 
     } catch(err) {
       document.getElementById('sdkStatus').textContent = '🔴 Error';
@@ -137,33 +131,28 @@
 
   function makeCall() {
     if (!plivoBrowser || !contactPhone) return;
-
     let number = contactPhone.replace(/\D/g, '');
     if (number.length === 10) number = '91' + number;
-
     setStatus('Calling...', 'calling');
     document.getElementById('btnCall').style.display = 'none';
     document.getElementById('btnHangup').style.display = 'block';
-
-    const extraHeaders = { 'X-PH-To': number };
-    callObj = plivoBrowser.client.call(number, extraHeaders);
+    plivoBrowser.call(number, {});
   }
 
   function hangup() {
-    if (plivoBrowser) plivoBrowser.client.hangup();
+    if (plivoBrowser) plivoBrowser.hangup();
     resetUI();
-    setStatus('Call ended', 'ready');
+    setStatus('Ready to call', 'ready');
   }
 
   function toggleMute() {
-    if (!plivoBrowser) return;
     isMuted = !isMuted;
     if (isMuted) {
-      plivoBrowser.client.mute();
+      plivoBrowser.mute();
       document.getElementById('btnMute').textContent = '🔇';
       document.getElementById('btnMute').classList.add('muted');
     } else {
-      plivoBrowser.client.unmute();
+      plivoBrowser.unmute();
       document.getElementById('btnMute').textContent = '🎤';
       document.getElementById('btnMute').classList.remove('muted');
     }
