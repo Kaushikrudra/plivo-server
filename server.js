@@ -42,35 +42,11 @@ app.get('/token', async (req, res) => {
 });
 
 // // Answer URL — Browser SDK call ke liye
-// app.post('/answer', (req, res) => {
-//   console.log('Answer hit:', req.body);
-//   const to = req.body.To || req.body.to;
-//   const response = new plivo.Response();
-//   if (to) {
-//     const dial = response.addDial({ callerId: process.env.PLIVO_NUMBER });
-//     dial.addNumber(to);
-//   } else {
-//     response.addSpeak('No destination number found.');
-//   }
-//   res.set('Content-Type', 'text/xml');
-//   res.send(response.toXML());
-// });
-
-
-
-// Answer URL — Browser SDK call ke liye
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
   const to = req.body.To || req.body.to;
   const response = new plivo.Response();
   if (to) {
-    response.addRecord({
-      action: `${process.env.RENDER_URL}/recording`,
-      recordSession: true,
-      recordingCallbackUrl: `${process.env.RENDER_URL}/recording`,
-      fileFormat: 'mp3',
-      transcriptionType: 'auto'
-    });
     const dial = response.addDial({ callerId: process.env.PLIVO_NUMBER });
     dial.addNumber(to);
   } else {
@@ -80,11 +56,35 @@ app.post('/answer', (req, res) => {
   res.send(response.toXML());
 });
 
-// Recording callback
-app.post('/recording', (req, res) => {
-  console.log('Recording data:', req.body);
-  res.sendStatus(200);
-});
+
+
+// Answer URL — Browser SDK call ke liye
+// app.post('/answer', (req, res) => {
+//   console.log('Answer hit:', req.body);
+//   const to = req.body.To || req.body.to;
+//   const response = new plivo.Response();
+//   if (to) {
+//     response.addRecord({
+//       action: `${process.env.RENDER_URL}/recording`,
+//       recordSession: true,
+//       recordingCallbackUrl: `${process.env.RENDER_URL}/recording`,
+//       fileFormat: 'mp3',
+//       transcriptionType: 'auto'
+//     });
+//     const dial = response.addDial({ callerId: process.env.PLIVO_NUMBER });
+//     dial.addNumber(to);
+//   } else {
+//     response.addSpeak('No destination number found.');
+//   }
+//   res.set('Content-Type', 'text/xml');
+//   res.send(response.toXML());
+// });
+
+// // Recording callback
+// app.post('/recording', (req, res) => {
+//   console.log('Recording data:', req.body);
+//   res.sendStatus(200);
+// });
 
 // Hangup
 app.post('/hangup-call', async (req, res) => {
