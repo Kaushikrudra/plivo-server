@@ -41,8 +41,9 @@ app.post('/make-call', async (req, res) => {
 // Plivo answer URL
 app.post('/answer', (req, res) => {
   const response = new plivo.Response();
-  response.addSpeak('Connecting your call, please wait.');
-  const dial = response.addDial();
+  const dial = response.addDial({
+    callerId: process.env.PLIVO_NUMBER
+  });
   dial.addNumber(req.body.To);
   res.set('Content-Type', 'text/xml');
   res.send(response.toXML());
