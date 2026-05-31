@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plivo Call</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .softphone { background: white; border-radius: 12px; padding: 24px; width: 320px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+  .header { text-align: center; margin-bottom: 20px; }
+  .header h2 { color: #333; font-size: 18px; }
+  .contact-info { background: #f0f4ff; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: center; }
+  .contact-name { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 4px; }
+  .contact-number { font-size: 20px; color: #4a6cf7; font-weight: bold; }
+  .status { text-align: center; padding: 8px; margin-bottom: 16px; border-radius: 6px; font-size: 14px; color: #666; background: #f9f9f9; }
+  .status.calling { background: #fff3cd; color: #856404; }
+  .status.connected { background: #d4edda; color: #155724; }
+  .status.error { background: #f8d7da; color: #721c24; }
+  .btn-call { width: 100%; padding: 14px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 10px; }
+  .btn-call:hover { background: #218838; }
+  .btn-call:disabled { background: #ccc; cursor: not-allowed; }
+  .btn-hangup { width: 100%; padding: 14px; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; display: none; }
+  .btn-hangup:hover { background: #c82333; }
+  .timer { text-align: center; font-size: 24px; color: #333; margin-bottom: 16px; display: none; }
+</style>
+</head>
+<body>
+<div class="softphone">
+  <div class="header">
+    <h2>📞 Plivo Call</h2>
+  </div>
+  <div class="contact-info">
+    <div class="contact-name" id="contactName">Loading...</div>
+    <div class="contact-number" id="contactNumber">--</div>
+  </div>
+  <div class="status" id="status">Ready to call</div>
+  <div class="timer" id="timer">00:00</div>
+  <button class="btn-call" id="btnCall" onclick="makeCall()">📞 Call</button>
+  <button class="btn-hangup" id="btnHangup" onclick="hangup()">📵 Hang Up</button>
+</div>
+
+<script>
+  const SERVER = 'https://plivo-server.onrender.com';
+  let callUuid = null;
+  let timerInterval = null;
+  let seconds = 0;
+
+  // Zoho CRM se contact info lo
+  function getContactInfo() {
+    try {
+      ZOHO.embeddedApp.on("PageLoad", function(data) {
+        const name = data.Name || 'Contact';
+        const phone = data.Phone || data.Mobile || '';
+        document.getElementById('contactName').textContent = name;
+        document.getElementById('contactNumber').textContent = phone || 'No number found';
+        if (!phone) {
+          document.getElementById('btnCall').disabled = true;
+          setStatus('No phone number found', 'error');
+        }
+      });
+      ZOHO.embeddedApp.init();
+    } catch(e) {
+      // Testing mode
+      document.getElementById('contactName').textContent = 'Test Contact';
+      document.getElementById('contactNumber').textContent = '+917509955205';
+    }
+  }
+
+  function setStatus(msg, type = '') {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status ' + type;
+  }
+
+  async function makeCall() {
+    const number = document.getElementById('contactNumber').textContent.replace(/\s+/g, '');
+    if (!number || number === '--') return;
+
+    document.getElementById('btnCall').disabled = true;
+    document.getElementById('btnHangup').style.display = 'block';
+    setStatus('Calling...', 'calling');
+
+    try {
+      const res = await fetch(`${SERVER}/make-call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: number })
+      });
+      const data = await res.json();
+      if (data.success) {
+        callUuid = data.uuid;
+        setStatus('Connected ✓', 'connected');
+        startTimer();
+      } else {
+        setStatus('Call failed: ' + (data.error || 'Unknown error'), 'error');
+        resetUI();
+      }
+    } catch(err) {
+      setStatus('Server error: ' + err.message, 'error');
+      resetUI();
+    }
+  }
+
+  async function hangup() {
+    if (callUuid) {
+      try {
+        await fetch(`${SERVER}/hangup-call`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uuid: callUuid })
+        });
+      } catch(e) {}
+    }
+    resetUI();
+    setStatus('Call ended', '');
+  }
+
+  function startTimer() {
+    seconds = 0;
+    document.getElementById('timer').style.display = 'block';
+    timerInterval = setInterval(() => {
+      seconds++;
+      const m = String(Math.floor(seconds/60)).padStart(2,'0');
+      const s = String(seconds%60).padStart(2,'0');
+      document.getElementById('timer').textContent = m + ':' + s;
+    }, 1000);
+  }
+
+  function resetUI() {
+    document.getElementById('btnCall').disabled = false;
+    document.getElementById('btnHangup').style.display = 'none';
+    document.getElementById('timer').style.display = 'none';
+    clearInterval(timerInterval);
+    callUuid = null;
+  }
+
+  getContactInfo();
+</script>
+<script src="https://live.zwidgets.com/js-sdk/1.0.5/ZohoEmbeddedAppSDK.min.js"></script>
+</body>
+</html>
