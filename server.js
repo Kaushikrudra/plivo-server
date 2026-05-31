@@ -23,22 +23,6 @@ app.get('/', (req, res) => {
 // Browser SDK token
 app.get('/token', (req, res) => {
   try {
-    const token = plivo.utils.generateToken(
-      process.env.PLIVO_AUTH_ID,
-      process.env.PLIVO_AUTH_TOKEN,
-      process.env.PLIVO_ENDPOINT_USERNAME
-    );
-    res.json({ token, username: process.env.PLIVO_ENDPOINT_USERNAME });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-
-
-app.get('/token', (req, res) => {
-  try {
     const jwt = require('jsonwebtoken');
     const payload = {
       iss: process.env.PLIVO_AUTH_ID,
