@@ -21,7 +21,7 @@ app.get('/', (req, res) => {
 });
 
 // Browser SDK token
-app.get('/token', (req, res) => {
+app.get('/token', async (req, res) => {
   try {
     const jwt = require('jsonwebtoken');
     const payload = {
@@ -31,7 +31,11 @@ app.get('/token', (req, res) => {
       exp: Math.floor(Date.now() / 1000) + 3600
     };
     const token = jwt.sign(payload, process.env.PLIVO_AUTH_TOKEN);
-    res.json({ token, username: process.env.PLIVO_ENDPOINT_USERNAME });
+    res.json({ 
+      token, 
+      username: process.env.PLIVO_ENDPOINT_USERNAME,
+      password: process.env.PLIVO_ENDPOINT_PASSWORD
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

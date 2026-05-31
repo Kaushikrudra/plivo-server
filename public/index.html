@@ -141,7 +141,7 @@
         setStatus('WebRTC not supported in this browser', 'error');
       });
 
-      plivoBrowserSdk.client.login(data.username, 'Agent@1234');
+      plivoBrowserSdk.client.login(data.username, data.password);
 
     } catch(err) {
       document.getElementById('sdkStatus').textContent = '🔴 Error';
