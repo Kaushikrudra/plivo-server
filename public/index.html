@@ -75,21 +75,30 @@
   let contactPhone = '';
 
 
+function getContactInfo() {
+  const params = new URLSearchParams(window.location.search);
+  const phone = decodeURIComponent(params.get('phone') || '');
+  const email = decodeURIComponent(params.get('email') || '');
+  const name = decodeURIComponent(params.get('name') || '');
 
-  function getContactInfo() {
-  // Method 1: postMessage se parent Zoho page se data lo
-  window.addEventListener('message', function(event) {
-    if (event.data && event.data.name) {
-      setContactUI({
-        name: event.data.name || 'Unknown',
-        phone: event.data.phone || '',
-        email: event.data.email || '',
-        initial: (event.data.name || 'U').charAt(0).toUpperCase(),
-        imageUrl: null
-      });
-      if (!event.data.phone) setStatus('No phone number found', 'error');
-    }
-  });
+  if (phone) {
+    setContactUI({
+      name: name || phone,
+      phone: phone,
+      email: email,
+      initial: (name || phone).charAt(0).toUpperCase(),
+      imageUrl: null
+    });
+  } else {
+    setContactUI({
+      name: 'Test Contact',
+      phone: '+917509955205',
+      email: 'test@example.com',
+      initial: 'T',
+      imageUrl: null
+    });
+  }
+}
 
   // Method 2: ZOHO SDK try karo
   if (typeof ZOHO !== 'undefined' && ZOHO.embeddedApp) {
