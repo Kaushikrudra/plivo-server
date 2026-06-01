@@ -31,8 +31,8 @@ app.get('/token', async (req, res) => {
       exp: Math.floor(Date.now() / 1000) + 3600
     };
     const token = jwt.sign(payload, process.env.PLIVO_AUTH_TOKEN);
-    res.json({
-      token,
+    res.json({ 
+      token, 
       username: process.env.PLIVO_ENDPOINT_USERNAME,
       password: process.env.PLIVO_ENDPOINT_PASSWORD
     });
@@ -41,39 +41,49 @@ app.get('/token', async (req, res) => {
   }
 });
 
-// Answer URL — Browser SDK call ke liye
-// FIX: addRecord() separate element ki jagah record: true on addDial() use karo
-// Ye ensure karta hai recording Plivo dashboard pe store ho
+// // Answer URL — Browser SDK call ke liye
+// app.post('/answer', (req, res) => {
+//   console.log('Answer hit:', req.body);
+//   const to = req.body.To || req.body.to;
+//   const response = new plivo.Response();
+//   if (to) {
+//     const dial = response.addDial({ callerId: process.env.PLIVO_NUMBER });
+//     dial.addNumber(to);
+//   } else {
+//     response.addSpeak('No destination number found.');
+//   }
+//   res.set('Content-Type', 'text/xml');
+//   res.send(response.toXML());
+// });
+
+
+
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
   const to = req.body.To || req.body.to;
   console.log('Calling to:', to);
   const response = new plivo.Response();
-
   if (to && to !== 'undefined') {
-    const dial = response.addDial({
-      callerId: process.env.PLIVO_NUMBER,
-      record: 'true',
-      recordingCallbackUrl: `${process.env.RENDER_URL}/recording`
+    response.addRecord({
+      action: `${process.env.RENDER_URL}/recording`,
+      startOnDialAnswer: true,
+      redirect: false
+    });
+    const dial = response.addDial({ 
+      callerId: process.env.PLIVO_NUMBER
     });
     dial.addNumber(to);
   } else {
     response.addSpeak('No destination number found.');
   }
-
   res.set('Content-Type', 'text/xml');
   res.send(response.toXML());
 });
 
-// Recording callback — Plivo yahan POST karta hai jab recording ready ho
+
+// Recording callback
 app.post('/recording', (req, res) => {
-  console.log('=== RECORDING RECEIVED ===');
-  console.log('Recording URL :', req.body.RecordingUrl);
-  console.log('Recording ID  :', req.body.RecordingID);
-  console.log('Call UUID     :', req.body.CallUUID);
-  console.log('Duration (s)  :', req.body.RecordingDuration);
-  console.log('Full body     :', req.body);
-  // TODO: Zoho CRM me save karna ho toh yahan Zoho API call karo
+  console.log('Recording:', req.body);
   res.sendStatus(200);
 });
 
@@ -91,3 +101,27 @@ app.post('/hangup-call', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+
+
+/* 
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+

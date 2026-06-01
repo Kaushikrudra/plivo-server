@@ -5,22 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Plivo Call</title>
 <script src="https://cdn.plivo.com/sdk/browser/v2/plivo.min.js"></script>
-
-<!-- FIX: Zoho SDK PEHLE load hona chahiye, script tag bottom se head me laya -->
-<script src="https://live.zwidgets.com/js-sdk/1.0.5/ZohoEmbeddedAppSDK.min.js"></script>
-
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4ff; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
   .softphone { background: white; border-radius: 16px; padding: 28px; width: 340px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
   .header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
   .header h2 { color: #1a1a2e; font-size: 18px; }
-  .avatar { width: 48px; height: 48px; border-radius: 50%; background: #4a6cf7; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; flex-shrink: 0; overflow: hidden; }
-  .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .avatar { width: 48px; height: 48px; border-radius: 50%; background: #4a6cf7; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; flex-shrink: 0; }
   .contact-info { background: #f8faff; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
   .contact-name { font-size: 17px; font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
-  .contact-number { font-size: 15px; color: #4a6cf7; font-weight: 500; margin-bottom: 2px; }
-  .contact-email { font-size: 12px; color: #888; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .contact-number { font-size: 15px; color: #4a6cf7; font-weight: 500; }
   .status-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; background: #f9f9f9; color: #666; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
   .status-bar.ready .status-dot { background: #28a745; }
@@ -52,7 +46,6 @@
   <div class="contact-info">
     <div class="contact-name" id="contactName">Loading...</div>
     <div class="contact-number" id="contactNumber">--</div>
-    <div class="contact-email" id="contactEmail"></div>
   </div>
   <div class="status-bar" id="statusBar">
     <div class="status-dot"></div>
@@ -74,52 +67,23 @@
   let isMuted = false;
   let contactPhone = '';
 
-  // FIX 1: typeof ZOHO check karo — SDK loaded hai ya nahi pehle verify karo
-  // FIX 2: Zoho se Name, Phone, Mobile, Email, image sab fields handle karo
   function getContactInfo() {
-    if (typeof ZOHO === 'undefined' || !ZOHO.embeddedApp) {
-      // Zoho ke bahar test mode — hardcoded fallback
-      console.warn('ZOHO SDK not available — using test data');
-      setContactUI({
-        name: 'Test Contact',
-        phone: '+917509955205',
-        email: 'test@example.com',
-        initial: 'T',
-        imageUrl: null
+    try {
+      ZOHO.embeddedApp.on("PageLoad", function(data) {
+        const name = data.Name || 'Contact';
+        const phone = data.Phone || data.Mobile || data.mobile || '';
+        document.getElementById('contactName').textContent = name;
+        document.getElementById('contactNumber').textContent = phone || 'No number';
+        document.getElementById('avatar').textContent = name.charAt(0).toUpperCase();
+        contactPhone = phone;
+        if (!phone) setStatus('No phone number found', 'error');
       });
-      return;
-    }
-
-    ZOHO.embeddedApp.on("PageLoad", function(data) {
-      console.log('Zoho PageLoad data:', data); // debug ke liye — baad me hata sakte ho
-
-      // Zoho alag alag modules me alag field names use karta hai
-      const name = data.Name || data.Full_Name || data.Company || 'Unknown Contact';
-      const phone = data.Phone || data.Mobile || data.mobile || data.phone || '';
-      const email = data.Email || data.email || '';
-      const imageUrl = data.Photo || null;
-      const initial = name.charAt(0).toUpperCase();
-
-      setContactUI({ name, phone, email, initial, imageUrl });
-
-      if (!phone) setStatus('No phone number found', 'error');
-    });
-
-    ZOHO.embeddedApp.init();
-  }
-
-  function setContactUI({ name, phone, email, initial, imageUrl }) {
-    document.getElementById('contactName').textContent = name;
-    document.getElementById('contactNumber').textContent = phone || 'No number';
-    document.getElementById('contactEmail').textContent = email || '';
-    contactPhone = phone;
-
-    const avatarEl = document.getElementById('avatar');
-    if (imageUrl) {
-      // Zoho contact photo hai toh image show karo
-      avatarEl.innerHTML = `<img src="${imageUrl}" alt="${name}" onerror="this.parentElement.textContent='${initial}'">`;
-    } else {
-      avatarEl.textContent = initial;
+      ZOHO.embeddedApp.init();
+    } catch(e) {
+      document.getElementById('contactName').textContent = 'Test Contact';
+      document.getElementById('contactNumber').textContent = '+917509955205';
+      document.getElementById('avatar').textContent = 'T';
+      contactPhone = '+917509955205';
     }
   }
 
@@ -239,11 +203,9 @@
     isMuted = false;
   }
 
-  // DOMContentLoaded ke baad run karo — Zoho SDK load guaranteed
-  document.addEventListener('DOMContentLoaded', function() {
-    getContactInfo();
-    initPlivo();
-  });
+  getContactInfo();
+  initPlivo();
 </script>
+<script src="https://live.zwidgets.com/js-sdk/1.0.5/ZohoEmbeddedAppSDK.min.js"></script>
 </body>
 </html>
