@@ -57,12 +57,18 @@ app.get('/token', async (req, res) => {
 // });
 
 
+
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
   const to = req.body.To || req.body.to;
   console.log('Calling to:', to);
   const response = new plivo.Response();
   if (to && to !== 'undefined') {
+    response.addRecord({
+      action: `${process.env.RENDER_URL}/recording`,
+      startOnDialAnswer: true,
+      redirect: false
+    });
     const dial = response.addDial({ 
       callerId: process.env.PLIVO_NUMBER
     });
