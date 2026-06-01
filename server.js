@@ -63,10 +63,6 @@ app.post('/answer', (req, res) => {
   console.log('Calling to:', to);
   const response = new plivo.Response();
   if (to && to !== 'undefined') {
-    response.addRecord({
-      callbackUrl: `${process.env.RENDER_URL}/recording`,
-      fileFormat: 'mp3'
-    });
     const dial = response.addDial({ 
       callerId: process.env.PLIVO_NUMBER
     });
