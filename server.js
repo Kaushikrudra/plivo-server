@@ -21,25 +21,39 @@ app.get('/', (req, res) => {
 });
 
 // Browser SDK token
-app.get('/token', async (req, res) => {
-  try {
-    const jwt = require('jsonwebtoken');
-    const payload = {
-      iss: process.env.PLIVO_AUTH_ID,
-      sub: process.env.PLIVO_ENDPOINT_USERNAME,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600
-    };
-    const token = jwt.sign(payload, process.env.PLIVO_AUTH_TOKEN);
-    res.json({
-      token,
-      username: process.env.PLIVO_ENDPOINT_USERNAME,
-      password: process.env.PLIVO_ENDPOINT_PASSWORD
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// app.get('/token', async (req, res) => {
+//   try {
+//     const jwt = require('jsonwebtoken');
+//     const payload = {
+//       iss: process.env.PLIVO_AUTH_ID,
+//       sub: process.env.PLIVO_ENDPOINT_USERNAME,
+//       iat: Math.floor(Date.now() / 1000),
+//       exp: Math.floor(Date.now() / 1000) + 3600
+//     };
+//     const token = jwt.sign(payload, process.env.PLIVO_AUTH_TOKEN);
+//     res.json({
+//       token,
+//       username: process.env.PLIVO_ENDPOINT_USERNAME,
+//       password: process.env.PLIVO_ENDPOINT_PASSWORD
+//     });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+
+app.get('/token', (req, res) => {
+  res.json({
+    username: process.env.PLIVO_ENDPOINT_USERNAME,
+    password: process.env.PLIVO_ENDPOINT_PASSWORD
+  });
 });
+
+
+
+
+
 
 // Answer URL — Browser SDK call ke liye
 // FIX: addRecord() separate element ki jagah record: true on addDial() use karo
