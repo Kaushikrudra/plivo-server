@@ -77,8 +77,41 @@
 
 
   function getContactInfo() {
-  if (typeof ZOHO === 'undefined' || !ZOHO.embeddedApp) {
-    console.warn('ZOHO SDK not available — using test data');
+  // Method 1: postMessage se parent Zoho page se data lo
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.name) {
+      setContactUI({
+        name: event.data.name || 'Unknown',
+        phone: event.data.phone || '',
+        email: event.data.email || '',
+        initial: (event.data.name || 'U').charAt(0).toUpperCase(),
+        imageUrl: null
+      });
+      if (!event.data.phone) setStatus('No phone number found', 'error');
+    }
+  });
+
+  // Method 2: ZOHO SDK try karo
+  if (typeof ZOHO !== 'undefined' && ZOHO.embeddedApp) {
+    ZOHO.embeddedApp.on("PageLoad", function(data) {
+      ZOHO.CRM.API.getRecord({
+        Entity: data.Entity,
+        RecordID: data.EntityId
+      }).then(function(response) {
+        const record = response.data[0];
+        const name = record.Full_Name || record.Name || 'Unknown';
+        const phone = record.Phone || record.Mobile || '';
+        const email = record.Email || '';
+        setContactUI({
+          name, phone, email,
+          initial: name.charAt(0).toUpperCase(),
+          imageUrl: null
+        });
+        if (!phone) setStatus('No phone number found', 'error');
+      });
+    });
+    ZOHO.embeddedApp.init();
+  } else {
     setContactUI({
       name: 'Test Contact',
       phone: '+917509955205',
@@ -86,32 +119,8 @@
       initial: 'T',
       imageUrl: null
     });
-    return;
   }
-
-  ZOHO.embeddedApp.on("PageLoad", function(data) {
-    ZOHO.CRM.API.getRecord({
-      Entity: data.Entity,
-      RecordID: data.EntityId
-    }).then(function(response) {
-      const record = response.data[0];
-      const name = record.Full_Name || record.Name || record.Last_Name || 'Unknown';
-      const phone = record.Phone || record.Mobile || '';
-      const email = record.Email || '';
-      setContactUI({
-        name,
-        phone,
-        email,
-        initial: name.charAt(0).toUpperCase(),
-        imageUrl: null
-      });
-      if (!phone) setStatus('No phone number found', 'error');
-    });
-  });
-
-  ZOHO.embeddedApp.init();
 }
-
   function setContactUI({ name, phone, email, initial, imageUrl }) {
     document.getElementById('contactName').textContent = name;
     document.getElementById('contactNumber').textContent = phone || 'No number';
