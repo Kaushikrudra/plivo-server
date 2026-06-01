@@ -59,20 +59,16 @@ app.get('/token', async (req, res) => {
 
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
-  
-  // Browser SDK me destination number X-PH-header se aata hai
-  const to = req.body.To || req.body.to || 
-             req.body['X-PH-To'] || req.body['x-ph-to'] ||
-             req.body.DialBLegTo || req.body.Direction;
-  
+  const to = req.body.To || req.body.to;
   console.log('Calling to:', to);
-  
   const response = new plivo.Response();
   if (to && to !== 'undefined') {
+    response.addRecord({
+      callbackUrl: `${process.env.RENDER_URL}/recording`,
+      fileFormat: 'mp3'
+    });
     const dial = response.addDial({ 
-      callerId: process.env.PLIVO_NUMBER,
-      record: true,
-      recordingCallbackUrl: `${process.env.RENDER_URL}/recording`
+      callerId: process.env.PLIVO_NUMBER
     });
     dial.addNumber(to);
   } else {
@@ -81,7 +77,6 @@ app.post('/answer', (req, res) => {
   res.set('Content-Type', 'text/xml');
   res.send(response.toXML());
 });
-
 
 
 // Recording callback
