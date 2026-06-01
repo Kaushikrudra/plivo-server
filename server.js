@@ -56,8 +56,6 @@ app.get('/token', (req, res) => {
 
 
 // Answer URL — Browser SDK call ke liye
-// FIX: addRecord() separate element ki jagah record: true on addDial() use karo
-// Ye ensure karta hai recording Plivo dashboard pe store ho
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
   const to = req.body.To || req.body.to;
@@ -65,10 +63,16 @@ app.post('/answer', (req, res) => {
   const response = new plivo.Response();
 
   if (to && to !== 'undefined') {
+    // Record element PEHLE, redirect false rakho
+    response.addRecord({
+      action: `${process.env.RENDER_URL}/recording`,
+      startOnDialAnswer: true,
+      redirect: false,
+      maxLength: 3600
+    });
+    // Phir Dial
     const dial = response.addDial({
-      callerId: process.env.PLIVO_NUMBER,
-      record: 'true',
-      recordingCallbackUrl: `${process.env.RENDER_URL}/recording`
+      callerId: process.env.PLIVO_NUMBER
     });
     dial.addNumber(to);
   } else {
@@ -78,6 +82,8 @@ app.post('/answer', (req, res) => {
   res.set('Content-Type', 'text/xml');
   res.send(response.toXML());
 });
+
+
 
 // Recording callback — Plivo yahan POST karta hai jab recording ready ho
 app.post('/recording', (req, res) => {
