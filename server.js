@@ -52,45 +52,36 @@ app.get('/token', (req, res) => {
 
 
 
-
-
-
 // Answer URL — Browser SDK call ke liye
 app.post('/answer', (req, res) => {
   console.log('Answer hit:', req.body);
   const to = req.body.To || req.body.to;
   console.log('Calling to:', to);
-  const response = new plivo.Response();
 
-  if (to && to !== 'undefined') {
-    // Record element PEHLE, redirect false rakho
-    response.addRecord({
-      action: `${process.env.RENDER_URL}/recording`,
-      startOnDialAnswer: true,
-      redirect: false,
-      maxLength: 3600
-    });
-
-    
-    // Phir Dial
-    const dial = response.addDial({
-      callerId: process.env.PLIVO_NUMBER
-    });
-    dial.addNumber(to);
-  } else {
-    response.addSpeak('No destination number found.');
+  if (!to || to === 'undefined') {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Speak>No destination number found.</Speak></Response>`;
+    res.set('Content-Type', 'text/xml');
+    return res.send(xml);
   }
 
-  res.set('Content-Type', 'text/xml');
-  res.send(response.toXML());
-});
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Record action="${process.env.RENDER_URL}/recording" startOnDialAnswer="true" redirect="false" maxLength="3600"/>
+  <Dial callerId="${process.env.PLIVO_NUMBER}">
+    <Number>${to}</Number>
+  </Dial>
+</Response>`;
 
+  res.set('Content-Type', 'text/xml');
+  res.send(xml);
+});
 
 
 // Recording callback — Plivo yahan POST karta hai jab recording ready ho
 app.post('/recording', (req, res) => {
   console.log('=== RECORDING RECEIVED ===');
-  console.log('Recording URL :', req.body.RecordingUrl);
+  // console.log('Recording URL :', req.body.RecordingUrl);
+  console.log('Recording URL :', req.body.RecordUrl || req.body.RecordingUrl || req.body.RecordFile);
   console.log('Recording ID  :', req.body.RecordingID);
   console.log('Call UUID     :', req.body.CallUUID);
   console.log('Duration (s)  :', req.body.RecordingDuration);
@@ -113,3 +104,41 @@ app.post('/hangup-call', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+
+
+
+
+
+
+
+/*  
+
+listen yaha kaafi sari problems ho gyi hai abhi aur mujhe lag  rha hai jaise me koi wrong approach le rha hu - 
+
+
+1> abhi palivo call button ko press karne pr render ka starting screen aata hai jo thik nhi hai 
+2> teleforce ko deceble karne ke baad call ka green icon remove ho gya aur simple call ka icon aaya tha jo not working tha
+pure crm me 
+3> abhi bhi UI pr test call , test email likha hai original data nhi aa rha hai
+4> palivo dashboard pr abhi bhi recording data nhi aa rha hai 
+
+tum puri documention ko read kro aur sahi approach batao kyu ki zoho crm plivo ko support nhi kr rha hai isliye phone bridge ko 
+use nhi kr pa rhe hai nhi to green icon call ka vaha bhi aa hi jata , iss sab ke karan aur bhi issues aa rhe hai to mujhe ek 
+proper solution batao 
+
+
+
+
+
+
+
+
+
+
+
+*/
+
+
+
