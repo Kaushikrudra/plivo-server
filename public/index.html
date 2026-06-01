@@ -74,39 +74,41 @@
   let isMuted = false;
   let contactPhone = '';
 
-  // FIX 1: typeof ZOHO check karo — SDK loaded hai ya nahi pehle verify karo
-  // FIX 2: Zoho se Name, Phone, Mobile, Email, image sab fields handle karo
   function getContactInfo() {
-    if (typeof ZOHO === 'undefined' || !ZOHO.embeddedApp) {
-      // Zoho ke bahar test mode — hardcoded fallback
-      console.warn('ZOHO SDK not available — using test data');
+  if (typeof ZOHO === 'undefined' || !ZOHO.embeddedApp) {
+    console.warn('ZOHO SDK not available — using test data');
+    setContactUI({
+      name: 'Test Contact',
+      phone: '+917509955205',
+      email: 'test@example.com',
+      initial: 'T',
+      imageUrl: null
+    });
+    return;
+  }
+
+  ZOHO.embeddedApp.on("PageLoad", function(data) {
+    ZOHO.CRM.API.getRecord({
+      Entity: data.Entity,
+      RecordID: data.EntityId
+    }).then(function(response) {
+      const record = response.data[0];
+      const name = record.Full_Name || record.Name || record.Last_Name || 'Unknown';
+      const phone = record.Phone || record.Mobile || '';
+      const email = record.Email || '';
       setContactUI({
-        name: 'Test Contact',
-        phone: '+917509955205',
-        email: 'test@example.com',
-        initial: 'T',
+        name,
+        phone,
+        email,
+        initial: name.charAt(0).toUpperCase(),
         imageUrl: null
       });
-      return;
-    }
-
-    ZOHO.embeddedApp.on("PageLoad", function(data) {
-      console.log('Zoho PageLoad data:', data); // debug ke liye — baad me hata sakte ho
-
-      // Zoho alag alag modules me alag field names use karta hai
-      const name = data.Name || data.Full_Name || data.Company || 'Unknown Contact';
-      const phone = data.Phone || data.Mobile || data.mobile || data.phone || '';
-      const email = data.Email || data.email || '';
-      const imageUrl = data.Photo || null;
-      const initial = name.charAt(0).toUpperCase();
-
-      setContactUI({ name, phone, email, initial, imageUrl });
-
       if (!phone) setStatus('No phone number found', 'error');
     });
+  });
 
-    ZOHO.embeddedApp.init();
-  }
+  ZOHO.embeddedApp.init();
+}
 
   function setContactUI({ name, phone, email, initial, imageUrl }) {
     document.getElementById('contactName').textContent = name;
