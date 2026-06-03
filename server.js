@@ -19,23 +19,51 @@ app.get('/token', (req, res) => {
   });
 });
 
+// app.post('/answer', (req, res) => {
+//   const to = req.body.To || req.body.to;
+//   const xml = `<?xml version="1.0" encoding="UTF-8"?>
+// <Response>
+//   <Record action="${process.env.RENDER_URL}/recording" startOnDialAnswer="true" redirect="false" maxLength="3600"/>
+//   <Dial callerId="${process.env.PLIVO_NUMBER}">
+//     <Number>${to || ''}</Number>
+//   </Dial>
+// </Response>`;
+
+//   res.type('text/xml').send(xml);
+// });
+
+// app.post('/recording', (req, res) => {
+//   console.log('Recording callback:', req.body);
+//   res.sendStatus(200);
+// });
+
+
+
+
 app.post('/answer', (req, res) => {
-  const to = req.body.To || req.body.to;
+  let to = req.body.To || req.body.to;
+  
+  // Auto-add India country code if missing
+  if (to && !to.startsWith('+')) {
+    to = '+91' + to;
+  }
+  
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Record action="${process.env.RENDER_URL}/recording" startOnDialAnswer="true" redirect="false" maxLength="3600"/>
   <Dial callerId="${process.env.PLIVO_NUMBER}">
-    <Number>${to || ''}</Number>
+    <Number>${to}</Number>
   </Dial>
 </Response>`;
 
-  res.type('text/xml').send(xml);
+  res.set('Content-Type', 'text/xml');
+  res.send(xml);
 });
 
-app.post('/recording', (req, res) => {
-  console.log('Recording callback:', req.body);
-  res.sendStatus(200);
-});
+
+
+
+
 
 app.post('/hangup-call', async (req, res) => {
   const { uuid } = req.body;
