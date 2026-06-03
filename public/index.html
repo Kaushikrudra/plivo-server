@@ -20,13 +20,18 @@
       font-family: Arial, Helvetica, sans-serif;
     }
 
-    .phone {
+    .phone,
+    .login {
       width: min(100% - 32px, 360px);
       background: #ffffff;
       border: 1px solid #dce3ec;
       border-radius: 8px;
       box-shadow: 0 18px 45px rgba(31, 42, 68, 0.14);
       padding: 22px;
+    }
+
+    .screen-hidden {
+      display: none;
     }
 
     .top {
@@ -42,6 +47,95 @@
       font-size: 20px;
       font-weight: 700;
       letter-spacing: 0;
+    }
+
+    .login-form {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: #566276;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .field input,
+    .field select {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      padding: 0 12px;
+      color: #101827;
+      font: inherit;
+      outline: none;
+    }
+
+    .field input:focus,
+    .field select:focus {
+      border-color: #3679f5;
+      box-shadow: 0 0 0 3px rgba(54, 121, 245, 0.16);
+    }
+
+    .login-error {
+      display: none;
+      padding: 10px 12px;
+      border: 1px solid #f4b4af;
+      border-radius: 8px;
+      background: #fff1f0;
+      color: #9b1c14;
+      font-size: 13px;
+    }
+
+    .login-error.visible {
+      display: block;
+    }
+
+    .login-button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 8px;
+      background: #3679f5;
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logout,
+    .history {
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #364152;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      min-height: 34px;
+      padding: 0 10px;
+    }
+
+    .history {
+      background: #f5f7fa;
+    }
+
+    .header-main {
+      display: grid;
+      gap: 8px;
     }
 
     .status {
@@ -212,15 +306,138 @@
       cursor: not-allowed;
       opacity: 0.48;
     }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(15, 23, 42, 0.5);
+    }
+
+    .modal.screen-hidden {
+      display: none;
+    }
+
+    .modal-panel {
+      width: min(100%, 760px);
+      max-height: min(86vh, 620px);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 22px 55px rgba(15, 23, 42, 0.24);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .modal-close {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #364152;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+    }
+
+    .history-body {
+      overflow: auto;
+      padding: 0;
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .history-table th,
+    .history-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #edf2f7;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .history-table th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      color: #566276;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .history-table audio {
+      width: 180px;
+      max-width: 100%;
+    }
+
+    .empty-history {
+      padding: 22px;
+      color: #566276;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-  <main class="phone" aria-label="Plivo softphone">
+  <section class="login" id="loginScreen" aria-label="Agent login">
+    <h1>Agent Login</h1>
+    <form class="login-form" id="loginForm">
+      <div class="field">
+        <label for="agentNameInput">Agent Name</label>
+        <input id="agentNameInput" type="text" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="agentIdInput">Agent ID</label>
+        <select id="agentIdInput" required>
+          <option value="">Select agent</option>
+          <option value="zohoagent170932965467135247620">zohoagent170932965467135247620</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="agentPasswordInput">Password</label>
+        <input id="agentPasswordInput" type="password" autocomplete="current-password" required>
+      </div>
+
+      <div class="login-error" id="loginError">Invalid agent credentials</div>
+      <button class="login-button" type="submit">Login</button>
+    </form>
+  </section>
+
+  <main class="phone screen-hidden" id="softphoneScreen" aria-label="Plivo softphone">
     <div class="top">
-      <h1>Softphone</h1>
-      <div class="status connecting" id="status">
-        <span class="dot"></span>
-        <span id="statusText">Connecting</span>
+      <div class="header-main">
+        <h1 id="softphoneTitle">Softphone</h1>
+        <div class="status connecting" id="status">
+          <span class="dot"></span>
+          <span id="statusText">Connecting</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="history" id="historyButton" type="button">History</button>
+        <button class="logout" id="logoutButton" type="button">Logout</button>
       </div>
     </div>
 
@@ -260,8 +477,23 @@
     </section>
   </main>
 
+  <section class="modal screen-hidden" id="historyModal" aria-label="Call history" role="dialog" aria-modal="true">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2>Call History</h2>
+        <button class="modal-close" id="historyCloseButton" type="button">Close</button>
+      </div>
+      <div class="history-body" id="historyBody">
+        <div class="empty-history">Loading...</div>
+      </div>
+    </div>
+  </section>
+
   <script>
     const SERVER = 'https://plivo-server.onrender.com';
+    const VALID_AGENTS = [
+      { name: 'Agent 1', username: 'zohoagent170932965467135247620', password: 'Agent@1234' }
+    ];
 
     let plivoBrowserSdk = null;
     let timerInterval = null;
@@ -269,7 +501,21 @@
     let muted = false;
     let sdkReady = false;
     let callActive = false;
+    let loggedInAgent = null;
 
+    const loginScreen = document.getElementById('loginScreen');
+    const softphoneScreen = document.getElementById('softphoneScreen');
+    const loginForm = document.getElementById('loginForm');
+    const agentNameInput = document.getElementById('agentNameInput');
+    const agentIdInput = document.getElementById('agentIdInput');
+    const agentPasswordInput = document.getElementById('agentPasswordInput');
+    const loginError = document.getElementById('loginError');
+    const softphoneTitle = document.getElementById('softphoneTitle');
+    const historyButton = document.getElementById('historyButton');
+    const historyModal = document.getElementById('historyModal');
+    const historyCloseButton = document.getElementById('historyCloseButton');
+    const historyBody = document.getElementById('historyBody');
+    const logoutButton = document.getElementById('logoutButton');
     const numberInput = document.getElementById('numberInput');
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('statusText');
@@ -289,6 +535,104 @@
       callButton.disabled = !sdkReady || callActive || !hasNumber;
       hangupButton.disabled = !callActive;
       muteButton.disabled = !callActive;
+    }
+
+    function showLoginScreen() {
+      loginScreen.classList.remove('screen-hidden');
+      softphoneScreen.classList.add('screen-hidden');
+      loginError.classList.remove('visible');
+      agentPasswordInput.value = '';
+      agentNameInput.focus();
+    }
+
+    function showSoftphoneScreen() {
+      loginScreen.classList.add('screen-hidden');
+      softphoneScreen.classList.remove('screen-hidden');
+      softphoneTitle.textContent = 'Softphone - ' + loggedInAgent.name;
+      setStatus('Connecting', 'connecting');
+      updateButtons();
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"']/g, function(character) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[character];
+      });
+    }
+
+    function formatCallTime(value) {
+      if (!value) {
+        return '-';
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return '-';
+      }
+
+      return date.toLocaleString();
+    }
+
+    function renderCallHistory(calls) {
+      if (!Array.isArray(calls) || calls.length === 0) {
+        historyBody.innerHTML = '<div class="empty-history">No calls found</div>';
+        return;
+      }
+
+      const rows = calls.slice().reverse().map(function(call) {
+        const recording = call.recordingUrl
+          ? '<audio controls src="' + escapeHtml(call.recordingUrl) + '"></audio>'
+          : '-';
+
+        return '<tr>' +
+          '<td>' + escapeHtml(formatCallTime(call.time)) + '</td>' +
+          '<td>' + escapeHtml(call.agent || '-') + '</td>' +
+          '<td>' + escapeHtml(call.to || '-') + '</td>' +
+          '<td>' + escapeHtml(call.duration || '-') + '</td>' +
+          '<td>' + recording + '</td>' +
+        '</tr>';
+      }).join('');
+
+      historyBody.innerHTML =
+        '<table class="history-table">' +
+          '<thead>' +
+            '<tr>' +
+              '<th>Time</th>' +
+              '<th>Agent</th>' +
+              '<th>Number Called</th>' +
+              '<th>Duration</th>' +
+              '<th>Recording</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>';
+    }
+
+    async function openHistory() {
+      historyModal.classList.remove('screen-hidden');
+      historyBody.innerHTML = '<div class="empty-history">Loading...</div>';
+
+      try {
+        const response = await fetch(SERVER + '/calls');
+        if (!response.ok) {
+          throw new Error('Call history request failed');
+        }
+
+        const calls = await response.json();
+        renderCallHistory(calls);
+      } catch (error) {
+        historyBody.innerHTML = '<div class="empty-history">Unable to load call history</div>';
+        console.error(error);
+      }
+    }
+
+    function closeHistory() {
+      historyModal.classList.add('screen-hidden');
     }
 
     function renderTimer() {
@@ -389,7 +733,8 @@
     async function initPlivo() {
       try {
         setStatus('Connecting', 'connecting');
-        const response = await fetch(SERVER + '/token');
+        const tokenUrl = SERVER + '/token?username=' + encodeURIComponent(loggedInAgent.username);
+        const response = await fetch(tokenUrl);
         if (!response.ok) {
           throw new Error('Token request failed');
         }
@@ -418,6 +763,47 @@
         console.error(error);
         updateButtons();
       }
+    }
+
+    function handleLogin(event) {
+      event.preventDefault();
+
+      const agentName = agentNameInput.value.trim();
+      const username = agentIdInput.value.trim();
+      const password = agentPasswordInput.value;
+      const agent = VALID_AGENTS.find(function(item) {
+        return item.username === username;
+      });
+
+      if (!agent || agent.password !== password) {
+        loginError.classList.add('visible');
+        return;
+      }
+
+      loggedInAgent = {
+        name: agentName || 'Agent',
+        username: agent.username,
+        password: agent.password
+      };
+      loginError.classList.remove('visible');
+      showSoftphoneScreen();
+      initPlivo();
+    }
+
+    function logout() {
+      if (callActive) {
+        hangup();
+      }
+
+      loggedInAgent = null;
+      plivoBrowserSdk = null;
+      sdkReady = false;
+      callActive = false;
+      numberInput.value = '';
+      micBanner.classList.remove('visible');
+      resetCallUi();
+      setStatus('Connecting', 'connecting');
+      showLoginScreen();
     }
 
     async function makeCall() {
@@ -472,11 +858,20 @@
     });
 
     numberInput.addEventListener('input', updateButtons);
+    loginForm.addEventListener('submit', handleLogin);
+    historyButton.addEventListener('click', openHistory);
+    historyCloseButton.addEventListener('click', closeHistory);
+    historyModal.addEventListener('click', function(event) {
+      if (event.target === historyModal) {
+        closeHistory();
+      }
+    });
+    logoutButton.addEventListener('click', logout);
     callButton.addEventListener('click', makeCall);
     hangupButton.addEventListener('click', hangup);
     muteButton.addEventListener('click', toggleMute);
 
-    window.addEventListener('load', initPlivo);
+    window.addEventListener('load', showLoginScreen);
   </script>
 </body>
 </html>

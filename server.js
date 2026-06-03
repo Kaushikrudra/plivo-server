@@ -6,17 +6,27 @@ require('dotenv').config();
 
 const app = express();
 const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+const callHistory = [];
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/token', (req, res) => {
-  res.json({
+const endpointCredentials = [
+  {
     username: process.env.PLIVO_ENDPOINT_USERNAME,
     password: process.env.PLIVO_ENDPOINT_PASSWORD
-  });
+  }
+];
+
+app.get('/token', (req, res) => {
+  const requestedUsername = req.query.username;
+  const credentials = requestedUsername
+    ? endpointCredentials.find((endpoint) => endpoint.username === requestedUsername) || endpointCredentials[0]
+    : endpointCredentials[0];
+
+  res.json(credentials);
 });
 
 // app.post('/answer', (req, res) => {
@@ -60,10 +70,23 @@ app.post('/answer', (req, res) => {
   res.send(xml);
 });
 
+app.post('/recording', (req, res) => {
+  console.log('Recording callback:', req.body);
+  callHistory.push({
+    id: req.body.CallUUID,
+    agent: req.body.CallerName,
+    to: req.body.To,
+    duration: req.body.RecordingDuration,
+    recordingUrl: req.body.RecordUrl,
+    time: new Date().toISOString(),
+    status: 'completed'
+  });
+  res.sendStatus(200);
+});
 
-
-
-
+app.get('/calls', (req, res) => {
+  res.json(callHistory);
+});
 
 app.post('/hangup-call', async (req, res) => {
   const { uuid } = req.body;
