@@ -197,6 +197,19 @@
       box-shadow: 0 0 0 3px rgba(54, 121, 245, 0.16);
     }
 
+    .customer-name {
+      display: none;
+      margin-bottom: 8px;
+      color: #364152;
+      font-size: 14px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .customer-name.visible {
+      display: block;
+    }
+
     .mic-banner {
       display: none;
       margin-top: 10px;
@@ -400,6 +413,8 @@
   </style>
 </head>
 <body>
+  <audio id="remoteAudio" autoplay></audio>
+
   <section class="login" id="loginScreen" aria-label="Agent login">
     <h1>Agent Login</h1>
     <form class="login-form" id="loginForm">
@@ -440,6 +455,8 @@
         <button class="logout" id="logoutButton" type="button">Logout</button>
       </div>
     </div>
+
+    <div class="customer-name" id="customerNameDisplay"></div>
 
     <input
       class="display"
@@ -516,6 +533,7 @@
     const historyCloseButton = document.getElementById('historyCloseButton');
     const historyBody = document.getElementById('historyBody');
     const logoutButton = document.getElementById('logoutButton');
+    const customerNameDisplay = document.getElementById('customerNameDisplay');
     const numberInput = document.getElementById('numberInput');
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('statusText');
@@ -551,6 +569,21 @@
       softphoneTitle.textContent = 'Softphone - ' + loggedInAgent.name;
       setStatus('Connecting', 'connecting');
       updateButtons();
+    }
+
+    function normalizePhoneParam(value) {
+      if (!value) {
+        return '';
+      }
+
+      const normalized = value.charAt(0) === ' ' ? '+' + value.slice(1) : value;
+      return normalized.trim();
+    }
+
+    function setCustomerName(name) {
+      const displayName = (name || '').trim();
+      customerNameDisplay.textContent = displayName;
+      customerNameDisplay.classList.toggle('visible', displayName.length > 0);
     }
 
     function escapeHtml(value) {
@@ -673,7 +706,14 @@
 
     async function requestMicPermission() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000
+          }
+        });
         stream.getTracks().forEach(function(track) {
           track.stop();
         });
@@ -747,7 +787,9 @@
         plivoBrowserSdk = new window.Plivo({
           debug: 'ALL',
           permOnClick: true,
-          enableTracking: true
+          enableTracking: true,
+          audioConstraints: { echoCancellation: true, noiseSuppression: true },
+          remoteAudioElement: document.getElementById('remoteAudio')
         });
 
         bindSdkEvents();
@@ -790,6 +832,44 @@
       initPlivo();
     }
 
+    function handleClickToCallLogin() {
+      const params = new URLSearchParams(window.location.search);
+      const phone = normalizePhoneParam(params.get('phone'));
+      const customerName = params.get('name') || '';
+      const username = params.get('agent') || '';
+      const password = params.get('password') || '';
+
+      if (!phone) {
+        showLoginScreen();
+        return;
+      }
+
+      const agent = VALID_AGENTS.find(function(item) {
+        return item.username === username;
+      });
+
+      if (!agent || agent.password !== password) {
+        showLoginScreen();
+        loginError.classList.add('visible');
+        return;
+      }
+
+      loggedInAgent = {
+        name: agent.name,
+        username: agent.username,
+        password: agent.password
+      };
+
+      numberInput.value = phone;
+      setCustomerName(customerName);
+      showSoftphoneScreen();
+      initPlivo();
+
+      window.setTimeout(function() {
+        makeCall();
+      }, 1500);
+    }
+
     function logout() {
       if (callActive) {
         hangup();
@@ -800,6 +880,7 @@
       sdkReady = false;
       callActive = false;
       numberInput.value = '';
+      setCustomerName('');
       micBanner.classList.remove('visible');
       resetCallUi();
       setStatus('Connecting', 'connecting');
@@ -871,7 +952,7 @@
     hangupButton.addEventListener('click', hangup);
     muteButton.addEventListener('click', toggleMute);
 
-    window.addEventListener('load', showLoginScreen);
+    window.addEventListener('load', handleClickToCallLogin);
   </script>
 </body>
 </html>
