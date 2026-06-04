@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Administrator",
+    "username": "admin",
+    "password": "Admin@1234",
+    "role": "admin"
+  },
+  {
+    "name": "Agent 1",
+    "username": "zohoagent170932965467135247620",
+    "password": "Agent@1234",
+    "role": "agent"
+  },
+  {
+    "name": "Agent 2",
+    "username": "kaushikrudra",
+    "password": "Edwin123",
+    "role": "agent"
+  }
+]

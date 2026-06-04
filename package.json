@@ -1,19 +1,38 @@
 {
   "name": "zoho-plivo-calls",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Professional Multi-Agent Calling Dashboard",
+  "main": "server/server.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "server": "nodemon server/server.js",
+    "start": "concurrently \"npm run dev\" \"npm run server\""
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
+    "axios": "^1.7.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "plivo": "^4.77.1"
+    "lucide-react": "^0.446.0",
+    "plivo": "^4.77.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "nodemon": "^3.1.7",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
   }
 }
