@@ -34,9 +34,9 @@
     /* Dialer Bottom Sheet Styles */
     #dialerDrawer {
       transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-      max-height: 500px; /* Limits height */
+      max-height: 500px;
     }
-    .drawer-closed { transform: translateY(105%); } /* Hide below screen */
+    .drawer-closed { transform: translateY(105%); }
     .drawer-open { transform: translateY(0); }
     
     .fab-btn {
@@ -70,17 +70,14 @@
           <label class="block text-sm font-semibold text-slate-700 mb-2">Username / Agent ID</label>
           <input id="agentIdInput" type="text" required placeholder="Enter username..." class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
         </div>
-
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-2">Access Password</label>
           <input id="agentPasswordInput" type="password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
         </div>
-
         <div id="loginError" class="hidden p-3 rounded-xl bg-red-50 text-red-600 text-sm border border-red-100 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
             Invalid credentials, please try again.
         </div>
-
         <button type="submit" class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 transition-all active:scale-[0.98]">
           Authenticate
         </button>
@@ -98,7 +95,6 @@
             </div>
             <span class="text-white font-bold text-xl hidden lg:block">ZohoCalls</span>
         </div>
-
         <nav class="flex-1 space-y-4 w-full">
             <button onclick="switchView('dashboard')" id="nav-dashboard" class="flex items-center gap-4 text-white bg-blue-600/20 text-blue-400 p-3 rounded-xl w-full text-left">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
@@ -113,7 +109,6 @@
                 <span class="font-medium hidden lg:block">Agents</span>
             </button>
         </nav>
-
         <button id="logoutButton" class="mt-auto flex items-center gap-4 text-slate-400 hover:text-red-400 p-3 rounded-xl transition-colors w-full">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
             <span class="font-medium hidden lg:block">Logout</span>
@@ -131,7 +126,6 @@
                     <span id="statusText">Connecting</span>
                 </div>
             </div>
-
             <div class="flex items-center gap-4">
                 <button onclick="switchView('logs')" class="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors relative">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -142,9 +136,7 @@
                         <p id="agentDisplayName" class="text-sm font-bold text-slate-800">Agent Name</p>
                         <p class="text-[10px] text-slate-400 uppercase tracking-wider">Online</p>
                     </div>
-                    <div id="agentInitial" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold border border-slate-200 uppercase">
-                        A
-                    </div>
+                    <div id="agentInitial" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold border border-slate-200 uppercase">A</div>
                 </div>
             </div>
         </header>
@@ -154,7 +146,6 @@
             
             <!-- Dashboard View -->
             <div id="view-dashboard" class="view-section active h-full overflow-hidden relative">
-                <!-- Dashboard Overview (Full Width) -->
                 <div class="h-full bg-white p-8 overflow-y-auto">
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
                         <div class="bg-blue-50 p-6 rounded-3xl border border-blue-100">
@@ -206,47 +197,33 @@
                                     <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Number</th>
                                     <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Duration</th>
                                     <th class="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Status</th>
-                                </table>
+                                </tr>
                             </thead>
                             <tbody id="recentHistoryBody" class="divide-y divide-slate-50">
-                                <tr>
-                                    <td colspan="4" class="p-8 text-center text-slate-400 italic">No calls made yet.</td>
-                                </tr>
+                                <tr><td colspan="4" class="p-8 text-center text-slate-400 italic">No calls made yet.</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- Floating Dialer Toggle (Only Dashboard) -->
+                <!-- Floating Dialer Toggle -->
                 <button id="dialerToggle" onclick="toggleDialer()" class="fab-btn fixed bottom-8 right-8 w-16 h-16 bg-blue-600 text-white rounded-2xl shadow-2xl shadow-blue-300 flex items-center justify-center z-40">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
                 </button>
 
-                <!-- Bottom-Right Dialer Sheet -->
+                <!-- Dialer Sheet -->
                 <div id="dialerDrawer" class="drawer-closed fixed bottom-0 right-8 w-full sm:w-[320px] glass z-50 shadow-2xl rounded-t-3xl border border-slate-200 flex flex-col overflow-hidden">
                     <div class="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                        <h4 class="font-bold text-slate-700 flex items-center gap-2 text-xs">
-                            <div class="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                            Dialer
-                        </h4>
-                        <button onclick="toggleDialer()" class="p-1 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
+                        <h4 class="font-bold text-slate-700 flex items-center gap-2 text-xs"><div class="w-2 h-2 bg-emerald-500 rounded-full"></div>Dialer</h4>
+                        <button onclick="toggleDialer()" class="p-1 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
                     </div>
-
                     <div class="p-5 flex flex-col">
                         <div class="text-center mb-4">
                             <div id="customerNameDisplay" class="text-[10px] font-semibold text-blue-600 mb-0.5 h-3"></div>
                             <input id="numberInput" type="tel" placeholder="Enter number..." class="w-full text-center text-xl font-bold bg-transparent border-none outline-none placeholder:text-slate-300 text-slate-800">
                             <div id="timer" class="hidden text-slate-400 font-medium text-xs mt-0.5">00:00</div>
                         </div>
-
-                        <div id="micBanner" class="hidden mb-3 p-2 bg-red-50 text-red-600 text-[10px] rounded-lg border border-red-100 text-center">
-                            Allow microphone access.
-                        </div>
-
+                        <div id="micBanner" class="hidden mb-3 p-2 bg-red-50 text-red-600 text-[10px] rounded-lg border border-red-100 text-center">Allow microphone access.</div>
                         <div class="grid grid-cols-3 gap-2 mb-4">
                             <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="1"><span class="text-base font-bold">1</span></button>
                             <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="2"><span class="text-base font-bold">2</span><span class="text-[6px] text-slate-400 uppercase">abc</span></button>
@@ -261,22 +238,12 @@
                             <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="0"><span class="text-base font-bold">0</span></button>
                             <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="#"><span class="text-base font-bold">#</span></button>
                         </div>
-
                         <div class="flex flex-col gap-2">
                             <div class="grid grid-cols-2 gap-2">
-                                <button id="callButton" disabled class="h-11 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-emerald-100 transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
-                                    Call
-                                </button>
-                                <button id="hangupButton" disabled class="h-11 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white rounded-xl flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-rose-100 transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.952.952 0 01-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
-                                    End
-                                </button>
+                                <button id="callButton" disabled class="h-11 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-emerald-100 transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Call</button>
+                                <button id="hangupButton" disabled class="h-11 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white rounded-xl flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-rose-100 transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.952.952 0 01-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>End</button>
                             </div>
-                            <button id="muteButton" disabled class="h-10 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl flex items-center justify-center gap-2 text-[11px] font-bold transition-all border border-slate-200">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-                                Mute
-                            </button>
+                            <button id="muteButton" disabled class="h-10 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl flex items-center justify-center gap-2 text-[11px] font-bold transition-all border border-slate-200"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>Mute</button>
                         </div>
                     </div>
                 </div>
@@ -286,16 +253,9 @@
             <div id="view-logs" class="view-section h-full p-8 overflow-y-auto">
                 <div class="max-w-6xl mx-auto">
                     <div class="flex items-center justify-between mb-8">
-                        <div>
-                            <h3 class="text-2xl font-bold text-slate-900">Full Call History</h3>
-                            <p class="text-slate-500 mt-1">Review all communication records and recordings.</p>
-                        </div>
-                        <button onclick="fetchHistory()" class="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:bg-slate-50 rounded-2xl font-bold transition-all shadow-sm">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                            Refresh Logs
-                        </button>
+                        <div><h3 class="text-2xl font-bold text-slate-900">Full Call History</h3><p class="text-slate-500 mt-1">Review all communication records and recordings.</p></div>
+                        <button onclick="fetchHistory()" class="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:bg-slate-50 rounded-2xl font-bold transition-all shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh Logs</button>
                     </div>
-
                     <!-- Filter Bar -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
                         <div class="relative">
@@ -303,32 +263,13 @@
                             <input type="text" id="filterNumber" oninput="applyFilters()" placeholder="Search by phone..." class="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400 absolute left-4 bottom-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                         </div>
-                        <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Filter by Agent</label>
-                            <select id="filterAgent" onchange="applyFilters()" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none">
-                                <option value="">All Agents</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Call Date</label>
-                            <input type="date" id="filterDate" onchange="applyFilters()" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-                        </div>
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Filter by Agent</label><select id="filterAgent" onchange="applyFilters()" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"><option value="">All Agents</option></select></div>
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Call Date</label><input type="date" id="filterDate" onchange="applyFilters()" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
                     </div>
-
                     <div class="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
                         <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50/80 border-b border-slate-100">
-                                    <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Date & Time</th>
-                                    <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Agent</th>
-                                    <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Customer Number</th>
-                                    <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Duration</th>
-                                    <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Recording</th>
-                                </tr>
-                            </thead>
-                            <tbody id="fullHistoryBody" class="divide-y divide-slate-50">
-                                <!-- Call rows here -->
-                            </tbody>
+                            <thead><tr class="bg-slate-50/80 border-b border-slate-100"><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Date & Time</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Agent</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Customer Number</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Duration</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Recording</th></tr></thead>
+                            <tbody id="fullHistoryBody" class="divide-y divide-slate-50"></tbody>
                         </table>
                     </div>
                 </div>
@@ -337,52 +278,21 @@
             <!-- Agents View -->
             <div id="view-agents" class="view-section h-full p-8 overflow-y-auto">
                 <div class="max-w-6xl mx-auto">
-                    <div class="flex items-center justify-between mb-8">
-                        <div>
-                            <h3 class="text-2xl font-bold text-slate-900">Agent Management</h3>
-                            <p class="text-slate-500 mt-1">Add, remove or monitor agent accounts.</p>
-                        </div>
-                    </div>
-
+                    <div class="flex items-center justify-between mb-8"><div><h3 class="text-2xl font-bold text-slate-900">Agent Management</h3><p class="text-slate-500 mt-1">Add, remove or monitor agent accounts.</p></div></div>
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-                        <!-- Add Agent Form -->
                         <div class="glass p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-0">
-                            <h4 class="text-lg font-bold mb-6 text-slate-800 flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-                                Create New Agent
-                            </h4>
+                            <h4 class="text-lg font-bold mb-6 text-slate-800 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>Create New Agent</h4>
                             <form id="addAgentForm" class="space-y-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Full Name</label>
-                                    <input type="text" id="newAgentName" required placeholder="Agent Name" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Username / ID</label>
-                                    <input type="text" id="newAgentUsername" required placeholder="zohoagent..." class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Password</label>
-                                    <input type="password" id="newAgentPassword" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-                                </div>
-                                <button type="submit" class="w-full py-4 bg-slate-900 hover:bg-black text-white rounded-xl font-bold transition-all shadow-lg active:scale-[0.98]">
-                                    Save Account
-                                </button>
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Full Name</label><input type="text" id="newAgentName" required placeholder="Agent Name" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Username / ID</label><input type="text" id="newAgentUsername" required placeholder="zohoagent..." class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Password</label><input type="password" id="newAgentPassword" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <button type="submit" class="w-full py-4 bg-slate-900 hover:bg-black text-white rounded-xl font-bold transition-all shadow-lg active:scale-[0.98]">Save Account</button>
                             </form>
                         </div>
-
-                        <!-- Agents List -->
                         <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
                             <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="bg-slate-50/80 border-b border-slate-100">
-                                        <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Agent Details</th>
-                                        <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Username</th>
-                                        <th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="agentsTableBody" class="divide-y divide-slate-50">
-                                    <!-- Agent rows here -->
-                                </tbody>
+                                <thead><tr class="bg-slate-50/80 border-b border-slate-100"><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Agent Details</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Username</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Action</th></tr></thead>
+                                <tbody id="agentsTableBody" class="divide-y divide-slate-50"></tbody>
                             </table>
                         </div>
                     </div>
@@ -437,83 +347,34 @@
 
     function updateAnalytics(calls) {
         if (!volumeChart || !distChart) return;
-
-        // 1. Volume Trends (Last 7 days or hours)
         const groups = {};
-        calls.forEach(c => {
-            const date = new Date(c.time).toLocaleDateString();
-            groups[date] = (groups[date] || 0) + 1;
-        });
+        calls.forEach(c => { const date = new Date(c.time).toLocaleDateString(); groups[date] = (groups[date] || 0) + 1; });
         const categories = Object.keys(groups).slice(-7);
         const data = categories.map(cat => groups[cat]);
-
         volumeChart.updateSeries([{ data: data }]);
         volumeChart.updateOptions({ xaxis: { categories: categories } });
-
-        // 2. Distribution
         const answered = calls.filter(c => c.status === 'completed' || c.status === 'answered').length;
         const failed = calls.length - answered;
         distChart.updateSeries([answered, failed]);
     }
 
-    // DOM Elements
-    const views = {
-        dashboard: document.getElementById('view-dashboard'),
-        logs: document.getElementById('view-logs'),
-        agents: document.getElementById('view-agents')
-    };
-    const navButtons = {
-        dashboard: document.getElementById('nav-dashboard'),
-        logs: document.getElementById('nav-logs'),
-        agents: document.getElementById('nav-agents')
-    };
+    const views = { dashboard: document.getElementById('view-dashboard'), logs: document.getElementById('view-logs'), agents: document.getElementById('view-agents') };
+    const navButtons = { dashboard: document.getElementById('nav-dashboard'), logs: document.getElementById('nav-logs'), agents: document.getElementById('nav-agents') };
 
     function switchView(viewName) {
-        Object.keys(views).forEach(v => {
-            views[v].classList.remove('active');
-            navButtons[v].classList.remove('bg-blue-600/20', 'text-blue-400');
-            navButtons[v].classList.add('text-slate-400');
-        });
-        
+        Object.keys(views).forEach(v => { views[v].classList.remove('active'); navButtons[v].classList.remove('bg-blue-600/20', 'text-blue-400'); navButtons[v].classList.add('text-slate-400'); });
         views[viewName].classList.add('active');
         navButtons[viewName].classList.add('bg-blue-600/20', 'text-blue-400');
         navButtons[viewName].classList.remove('text-slate-400');
-        
         document.getElementById('viewTitle').textContent = viewName.charAt(0).toUpperCase() + viewName.slice(1);
-        
-        // Show/Hide Dialer FAB
         const fab = document.getElementById('dialerToggle');
-        if (viewName === 'dashboard') {
-            fab.classList.remove('hidden');
-        } else {
-            fab.classList.add('hidden');
-            closeDialer();
-        }
-
+        if (viewName === 'dashboard') { fab.classList.remove('hidden'); } else { fab.classList.add('hidden'); closeDialer(); }
         if (viewName === 'logs') fetchHistory();
         if (viewName === 'agents') fetchAgents();
     }
 
-    function toggleDialer() {
-        const drawer = document.getElementById('dialerDrawer');
-        if (drawer.classList.contains('drawer-closed')) {
-            // Opening: Clear number for a fresh start
-            document.getElementById('numberInput').value = '';
-            if (typeof updateButtons === 'function') updateButtons();
-            
-            drawer.classList.remove('drawer-closed');
-            drawer.classList.add('drawer-open');
-        } else {
-            drawer.classList.remove('drawer-open');
-            drawer.classList.add('drawer-closed');
-        }
-    }
-
-    function closeDialer() {
-        const drawer = document.getElementById('dialerDrawer');
-        drawer.classList.remove('drawer-open');
-        drawer.classList.add('drawer-closed');
-    }
+    function toggleDialer() { const drawer = document.getElementById('dialerDrawer'); if (drawer.classList.contains('drawer-closed')) { document.getElementById('numberInput').value = ''; if (typeof updateButtons === 'function') updateButtons(); drawer.classList.remove('drawer-closed'); drawer.classList.add('drawer-open'); } else { drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); } }
+    function closeDialer() { const drawer = document.getElementById('dialerDrawer'); drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); }
 
     async function fetchAgents() {
         const filterSelect = document.getElementById('filterAgent');
@@ -521,94 +382,27 @@
             const response = await fetch(`${SERVER}/agents`);
             if (!response.ok) throw new Error('Failed to fetch');
             availableAgents = await response.json();
-            
-            // Update stats (exclude admin role from agents count)
             const actualAgents = availableAgents.filter(a => a.role !== 'admin');
             document.getElementById('stat-total-agents').textContent = actualAgents.length;
-
-            // Update Filter Dropdown
-            if (filterSelect) {
-                filterSelect.innerHTML = '<option value="">All Agents</option>' + 
-                    actualAgents.map(a => `<option value="${a.name}">${a.name}</option>`).join('');
-            }
-
-            // Update Agents Table
+            if (filterSelect) { filterSelect.innerHTML = '<option value="">All Agents</option>' + actualAgents.map(a => `<option value="${a.name}">${a.name}</option>`).join(''); }
             const tbody = document.getElementById('agentsTableBody');
-            if (tbody) {
-                tbody.innerHTML = actualAgents.map(a => `
-                    <tr class="hover:bg-slate-50/50 transition-colors">
-                        <td class="p-5">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-bold uppercase">${a.name[0]}</div>
-                                <span class="font-bold text-slate-800">${a.name}</span>
-                            </div>
-                        </td>
-                        <td class="p-5 text-sm text-slate-500 font-mono">${a.username}</td>
-                        <td class="p-5 text-right">
-                            <button onclick="deleteAgent('${a.username}')" class="text-slate-300 hover:text-red-500 p-2 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-        } catch (e) { 
-            console.error('Error fetching agents', e);
-        }
+            if (tbody) { tbody.innerHTML = actualAgents.map(a => `<tr class="hover:bg-slate-50/50 transition-colors"><td class="p-5"><div class="flex items-center gap-3"><div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-bold uppercase">${a.name[0]}</div><span class="font-bold text-slate-800">${a.name}</span></div></td><td class="p-5 text-sm text-slate-500 font-mono">${a.username}</td><td class="p-5 text-right"><button onclick="deleteAgent('${a.username}')" class="text-slate-300 hover:text-red-500 p-2 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td></tr>`).join(''); }
+        } catch (e) { console.error('Error fetching agents', e); }
     }
 
-    async function deleteAgent(username) {
-        if (!confirm(`Are you sure you want to delete agent '${username}'?`)) return;
-        try {
-            const res = await fetch(`${SERVER}/agents/${username}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                fetchAgents();
-            } else {
-                const data = await res.json();
-                alert(data.error || 'Failed to delete agent');
-            }
-        } catch (e) {
-            console.error('Delete Agent Error:', e);
-            alert('Failed to delete agent');
-        }
-    }
+    async function deleteAgent(username) { if (!confirm(`Are you sure you want to delete agent '${username}'?`)) return; try { const res = await fetch(`${SERVER}/agents/${username}`, { method: 'DELETE' }); if (res.ok) fetchAgents(); else { const data = await res.json(); alert(data.error || 'Failed to delete agent'); } } catch (e) { console.error('Delete Agent Error:', e); alert('Failed to delete agent'); } }
 
-    function applyFilters() {
-        const num = document.getElementById('filterNumber').value.toLowerCase();
-        const agent = document.getElementById('filterAgent').value;
-        const date = document.getElementById('filterDate').value;
-
-        const filtered = allCalls.filter(c => {
-            const matchesNum = c.to.toLowerCase().includes(num);
-            const matchesAgent = !agent || c.agent === agent;
-            const matchesDate = !date || new Date(c.time).toLocaleDateString() === new Date(date).toLocaleDateString();
-            return matchesNum && matchesAgent && matchesDate;
-        });
-
-        renderHistory(filtered);
-    }
+    function applyFilters() { const num = document.getElementById('filterNumber').value.toLowerCase(); const agent = document.getElementById('filterAgent').value; const date = document.getElementById('filterDate').value; const filtered = allCalls.filter(c => { const matchesNum = c.to.toLowerCase().includes(num); const matchesAgent = !agent || c.agent === agent; const matchesDate = !date || new Date(c.time).toLocaleDateString() === new Date(date).toLocaleDateString(); return matchesNum && matchesAgent && matchesDate; }); renderHistory(filtered); }
 
     function renderHistory(calls) {
-        const renderRow = (call) => `
-            <tr class="hover:bg-slate-50 transition-colors">
-                <td class="p-5 text-sm text-slate-600">${new Date(call.time).toLocaleString()}</td>
-                <td class="p-5 text-sm font-bold text-slate-800">${call.agent || 'Agent'}</td>
-                <td class="p-5 text-sm font-bold text-blue-600">${call.to}</td>
-                <td class="p-5 text-sm text-slate-500">${call.duration || 0}s</td>
-                <td class="p-5 text-right">
-                    ${call.recordingUrl ? 
-                        `<a href="${call.recordingUrl}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-colors border border-emerald-100">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            Play
-                        </a>` : 
-                        '<span class="text-xs text-slate-300 italic">No recording</span>'}
-                </td>
-            </tr>
-        `;
-
-        document.getElementById('fullHistoryBody').innerHTML = calls.length ? 
-            calls.slice().reverse().map(renderRow).join('') : 
-            '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
+        const renderRow = (call) => {
+            let durationDisplay = call.duration;
+            if (durationDisplay === "-1" || durationDisplay === -1) durationDisplay = "0";
+            else if (isNaN(parseInt(durationDisplay))) durationDisplay = "0";
+            else durationDisplay = parseInt(durationDisplay);
+            return `<tr class="hover:bg-slate-50 transition-colors"><td class="p-5 text-sm text-slate-600">${new Date(call.time).toLocaleString()}</td><td class="p-5 text-sm font-bold text-slate-800">${call.agent || 'Agent'}</td><td class="p-5 text-sm font-bold text-blue-600">${call.to}</td><td class="p-5 text-sm text-slate-500">${durationDisplay}s</td><td class="p-5 text-right">${call.recordingUrl ? `<a href="${call.recordingUrl}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-colors border border-emerald-100"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Play</a>` : '<span class="text-xs text-slate-300 italic">No recording</span>'}</td></tr>`;
+        };
+        document.getElementById('fullHistoryBody').innerHTML = calls.length ? calls.slice().reverse().map(renderRow).join('') : '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
     }
 
     async function fetchHistory() {
@@ -616,31 +410,28 @@
         try {
             const response = await fetch(`${SERVER}/calls?username=${encodeURIComponent(loggedInAgent.username)}&role=${encodeURIComponent(loggedInAgent.role)}`);
             allCalls = await response.json();
-            
+            console.log('Fetched calls:', allCalls);
             const displayCalls = allCalls;
-            
-            // Update stats
             document.getElementById('stat-total-calls').textContent = displayCalls.length;
-            
-            // Calculate and update talk time
-            const totalTalkTimeSec = displayCalls.reduce((acc, call) => acc + (call.duration || 0), 0);
+            const totalTalkTimeSec = displayCalls.reduce((acc, call) => acc + (typeof call.duration === 'number' ? call.duration : parseInt(call.duration) || 0), 0);
             const totalTalkTimeMin = Math.round(totalTalkTimeSec / 60);
             document.getElementById('stat-talk-time').textContent = totalTalkTimeMin + 'm';
-            
             updateAnalytics(displayCalls);
 
-            document.getElementById('recentHistoryBody').innerHTML = displayCalls.length ? 
-                displayCalls.slice(-5).reverse().map(call => `
-                    <tr class="hover:bg-slate-50 transition-colors">
-                        <td class="p-4 text-sm text-slate-500">${new Date(call.time).toLocaleTimeString()}</td>
-                        <td class="p-4 text-sm font-bold text-slate-800">${call.to}</td>
-                        <td class="p-4 text-sm text-slate-500">${call.duration || 0}s</td>
-                        <td class="p-4 text-right">
-                            <span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold uppercase">${call.status}</span>
-                        </td>
-                    </tr>
-                `).join('') : '<tr><td colspan="4" class="p-8 text-center text-slate-400">No calls today</td></tr>';
-
+            // Recent Activity table
+            const recentBody = document.getElementById('recentHistoryBody');
+            if (displayCalls.length === 0) {
+                recentBody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-400 italic">No calls made yet.</td></tr>';
+            } else {
+                const lastFive = displayCalls.slice(-5).reverse();
+                recentBody.innerHTML = lastFive.map(call => {
+                    let durationDisplay = call.duration;
+                    if (durationDisplay === "-1" || durationDisplay === -1) durationDisplay = "0";
+                    else if (isNaN(parseInt(durationDisplay))) durationDisplay = "0";
+                    else durationDisplay = parseInt(durationDisplay);
+                    return `<tr class="hover:bg-slate-50 transition-colors"><td class="p-4 text-sm text-slate-500">${new Date(call.time).toLocaleTimeString()}</td><td class="p-4 text-sm font-bold text-slate-800">${call.to}</td><td class="p-4 text-sm text-slate-500">${durationDisplay}s</td><td class="p-4 text-right"><span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold uppercase">${call.status}</span></td></tr>`;
+                }).join('');
+            }
             renderHistory(displayCalls);
         } catch(e) { console.error('Error fetching logs', e); }
     }
@@ -649,34 +440,13 @@
         document.getElementById('statusText').textContent = label;
         const s = document.getElementById('status');
         s.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition-all ';
-        if (type === 'ready' || type === 'connected') {
-            s.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100');
-            s.querySelector('span').className = 'w-2 h-2 bg-emerald-500 rounded-full';
-        } else if (type === 'error') {
-            s.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100');
-            s.querySelector('span').className = 'w-2 h-2 bg-rose-500 rounded-full';
-        } else {
-            s.classList.add('bg-amber-50', 'text-amber-600', 'border-amber-100');
-            s.querySelector('span').className = 'w-2 h-2 bg-amber-500 rounded-full status-pulse';
-        }
+        if (type === 'ready' || type === 'connected') { s.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100'); s.querySelector('span').className = 'w-2 h-2 bg-emerald-500 rounded-full'; }
+        else if (type === 'error') { s.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100'); s.querySelector('span').className = 'w-2 h-2 bg-rose-500 rounded-full'; }
+        else { s.classList.add('bg-amber-50', 'text-amber-600', 'border-amber-100'); s.querySelector('span').className = 'w-2 h-2 bg-amber-500 rounded-full status-pulse'; }
     }
 
-    function startTimer() {
-        stopTimer();
-        timerSeconds = 0;
-        document.getElementById('timer').classList.remove('hidden');
-        timerInterval = setInterval(() => {
-            timerSeconds++;
-            const m = String(Math.floor(timerSeconds/60)).padStart(2,'0');
-            const s = String(timerSeconds%60).padStart(2,'0');
-            document.getElementById('timer').textContent = `${m}:${s}`;
-        }, 1000);
-    }
-
-    function stopTimer() {
-        if(timerInterval) clearInterval(timerInterval);
-        document.getElementById('timer').classList.add('hidden');
-    }
+    function startTimer() { stopTimer(); timerSeconds = 0; document.getElementById('timer').classList.remove('hidden'); timerInterval = setInterval(() => { timerSeconds++; const m = String(Math.floor(timerSeconds/60)).padStart(2,'0'); const s = String(timerSeconds%60).padStart(2,'0'); document.getElementById('timer').textContent = `${m}:${s}`; }, 1000); }
+    function stopTimer() { if(timerInterval) clearInterval(timerInterval); document.getElementById('timer').classList.add('hidden'); }
 
     async function initPlivo() {
         try {
@@ -685,98 +455,32 @@
             plivoBrowserSdk = new window.Plivo({ debug: 'ALL', permOnClick: true, remoteAudioElement: document.getElementById('remoteAudio') });
             plivoBrowserSdk.client.on('onLogin', () => { sdkReady = true; setStatus('Ready', 'ready'); updateButtons(); });
             plivoBrowserSdk.client.on('onLoginFailed', () => { sdkReady = false; setStatus('Login Failed', 'error'); updateButtons(); });
-            plivoBrowserSdk.client.on('onCalling', () => { 
-                callActive = true; 
-                setStatus('Calling...', 'calling'); 
-                updateButtons(); 
-            });
-            plivoBrowserSdk.client.on('onCallAnswered', () => { 
-                setStatus('Connected', 'connected'); 
-                startTimer(); 
-            });
-            plivoBrowserSdk.client.on('onCallFailed', (reason) => {
-                setStatus('Call Failed', 'error');
-                callActive = false;
-                stopTimer();
-                updateButtons();
-                const dialledNum = currentDialledNumber;
-                if (dialledNum) {
-                    fetch(`${SERVER}/log-call`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            to: dialledNum,
-                            agent: loggedInAgent ? loggedInAgent.name : 'Unknown Agent',
-                            duration: 0,
-                            status: 'failed'
-                        })
-                    }).then(() => {
-                        fetchHistory();
-                        currentDialledNumber = ''; // Reset
-                    });
-                }
-            });
-            plivoBrowserSdk.client.on('onCallTerminated', () => { 
-                const finalDuration = timerSeconds;
-                const dialledNum = currentDialledNumber;
-                
-                setStatus(sdkReady?'Ready':'Connecting', sdkReady?'ready':'connecting'); 
-                callActive = false; 
-                stopTimer(); 
-                updateButtons(); 
-
-                // Manual Local Logging as Backup
-                if (dialledNum) {
-                    fetch(`${SERVER}/log-call`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            to: dialledNum,
-                            agent: loggedInAgent ? loggedInAgent.name : 'Unknown Agent',
-                            duration: finalDuration,
-                            status: 'completed'
-                        })
-                    }).then(() => {
-                        fetchHistory();
-                        currentDialledNumber = ''; // Reset
-                    });
-                }
-            });
+            plivoBrowserSdk.client.on('onCalling', () => { callActive = true; setStatus('Calling...', 'calling'); updateButtons(); });
+            plivoBrowserSdk.client.on('onCallAnswered', () => { setStatus('Connected', 'connected'); startTimer(); });
+            plivoBrowserSdk.client.on('onCallFailed', (reason) => { setStatus('Call Failed', 'error'); callActive = false; stopTimer(); updateButtons(); const dialledNum = currentDialledNumber; if (dialledNum) { fetch(`${SERVER}/log-call`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: dialledNum, agent: loggedInAgent ? loggedInAgent.name : 'Unknown Agent', duration: 0, status: 'failed' }) }).then(() => { fetchHistory(); currentDialledNumber = ''; }); } });
+            plivoBrowserSdk.client.on('onCallTerminated', () => { const finalDuration = timerSeconds; const dialledNum = currentDialledNumber; setStatus(sdkReady?'Ready':'Connecting', sdkReady?'ready':'connecting'); callActive = false; stopTimer(); updateButtons(); if (dialledNum) { fetch(`${SERVER}/log-call`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: dialledNum, agent: loggedInAgent ? loggedInAgent.name : 'Unknown Agent', duration: finalDuration, status: 'completed' }) }).then(() => { fetchHistory(); currentDialledNumber = ''; }); } });
             plivoBrowserSdk.client.login(creds.username, creds.password);
         } catch(e) { setStatus('Plivo Error', 'error'); }
     }
 
-    function updateButtons() {
-        const hasNumber = document.getElementById('numberInput').value.trim().length > 0;
-        document.getElementById('callButton').disabled = !sdkReady || callActive || !hasNumber;
-        document.getElementById('hangupButton').disabled = !callActive;
-        document.getElementById('muteButton').disabled = !callActive;
-    }
+    function updateButtons() { const hasNumber = document.getElementById('numberInput').value.trim().length > 0; document.getElementById('callButton').disabled = !sdkReady || callActive || !hasNumber; document.getElementById('hangupButton').disabled = !callActive; document.getElementById('muteButton').disabled = !callActive; }
 
-    // Event Listeners
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = document.getElementById('agentIdInput').value.trim();
         const password = document.getElementById('agentPasswordInput').value.trim();
         try {
-            const res = await fetch(`${SERVER}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
+            const res = await fetch(`${SERVER}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
             if (res.ok) {
                 const data = await res.json();
                 const agent = data.agent;
                 loggedInAgent = agent;
                 localStorage.setItem('loggedInAgent', JSON.stringify(agent));
-                
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('softphoneScreen').classList.remove('hidden');
                 document.getElementById('softphoneScreen').classList.add('flex');
                 document.getElementById('agentDisplayName').textContent = agent.name;
                 document.getElementById('agentInitial').textContent = agent.name[0];
-                
-                // Role-Based UI Display Configurations
                 if (agent.role === 'admin') {
                     document.getElementById('dialerToggle').classList.add('hidden');
                     document.getElementById('nav-agents').classList.remove('hidden');
@@ -789,79 +493,31 @@
                     if (agentsMetric) agentsMetric.classList.add('hidden');
                     initPlivo();
                 }
-                
                 fetchHistory();
-            } else {
-                document.getElementById('loginError').classList.remove('hidden');
-            }
-        } catch(err) {
-            document.getElementById('loginError').classList.remove('hidden');
-        }
+            } else { document.getElementById('loginError').classList.remove('hidden'); }
+        } catch(err) { document.getElementById('loginError').classList.remove('hidden'); }
     });
 
-    document.getElementById('addAgentForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = document.getElementById('newAgentName').value;
-        const username = document.getElementById('newAgentUsername').value;
-        const password = document.getElementById('newAgentPassword').value;
-        try {
-            const res = await fetch(`${SERVER}/agents`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, username, password })
-            });
-            if(res.ok) {
-                alert('Agent added successfully!');
-                document.getElementById('addAgentForm').reset();
-                fetchAgents();
-            }
-        } catch(e) { alert('Failed to add agent'); }
-    });
+    document.getElementById('addAgentForm').addEventListener('submit', async (e) => { e.preventDefault(); const name = document.getElementById('newAgentName').value; const username = document.getElementById('newAgentUsername').value; const password = document.getElementById('newAgentPassword').value; try { const res = await fetch(`${SERVER}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, username, password }) }); if(res.ok) { alert('Agent added successfully!'); document.getElementById('addAgentForm').reset(); fetchAgents(); } } catch(e) { alert('Failed to add agent'); } });
 
-    document.getElementById('callButton').addEventListener('click', () => {
-        const num = document.getElementById('numberInput').value.trim();
-        if(plivoBrowserSdk && num) {
-            currentDialledNumber = num; // Save number for logging
-            const extraHeaders = {
-                'X-PH-AgentName': loggedInAgent ? loggedInAgent.name : 'Unknown Agent'
-            };
-            plivoBrowserSdk.client.call(num, extraHeaders);
-        }
-    });
-
-    document.getElementById('hangupButton').addEventListener('click', () => {
-        if(plivoBrowserSdk) plivoBrowserSdk.client.hangup();
-    });
-
-    document.querySelectorAll('[data-key]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.getElementById('numberInput').value += btn.dataset.key;
-            updateButtons();
-        });
-    });
-
+    document.getElementById('callButton').addEventListener('click', () => { const num = document.getElementById('numberInput').value.trim(); if(plivoBrowserSdk && num) { currentDialledNumber = num; const extraHeaders = { 'X-PH-AgentName': loggedInAgent ? loggedInAgent.name : 'Unknown Agent' }; plivoBrowserSdk.client.call(num, extraHeaders); } });
+    document.getElementById('hangupButton').addEventListener('click', () => { if(plivoBrowserSdk) plivoBrowserSdk.client.hangup(); });
+    document.querySelectorAll('[data-key]').forEach(btn => { btn.addEventListener('click', () => { document.getElementById('numberInput').value += btn.dataset.key; updateButtons(); }); });
     document.getElementById('numberInput').addEventListener('input', updateButtons);
-    document.getElementById('logoutButton').addEventListener('click', () => {
-        localStorage.removeItem('loggedInAgent');
-        location.reload();
-    });
+    document.getElementById('logoutButton').addEventListener('click', () => { localStorage.removeItem('loggedInAgent'); location.reload(); });
 
-    // Init
     window.onload = async () => {
         await fetchAgents();
         initCharts();
-        
         const savedAgent = localStorage.getItem('loggedInAgent');
         if (savedAgent) {
             const agent = JSON.parse(savedAgent);
             loggedInAgent = agent;
-            
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('softphoneScreen').classList.remove('hidden');
             document.getElementById('softphoneScreen').classList.add('flex');
             document.getElementById('agentDisplayName').textContent = agent.name;
             document.getElementById('agentInitial').textContent = agent.name[0];
-            
             if (agent.role === 'admin') {
                 document.getElementById('dialerToggle').classList.add('hidden');
                 document.getElementById('nav-agents').classList.remove('hidden');
@@ -874,7 +530,6 @@
                 if (agentsMetric) agentsMetric.classList.add('hidden');
                 initPlivo();
             }
-            
             fetchHistory();
         }
     };
