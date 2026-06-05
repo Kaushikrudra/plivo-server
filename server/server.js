@@ -16,7 +16,7 @@ const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUT
 
 // Persistence for Agents and Calls
 const DATA_DIR = path.join(__dirname, '../data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); // FIXED: recursive added
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const CALLS_FILE = path.join(DATA_DIR, 'calls.json');
 const AGENTS_FILE = path.join(DATA_DIR, 'agents.json');
@@ -142,20 +142,32 @@ app.post('/answer', (req, res) => {
   res.send(xml);
 });
 
-// FIXED: Recording callback — handles all Plivo field name formats
+// IMPROVED: Recording callback with agent name mapping from SIP username (CallerName)
 app.post('/recording', (req, res) => {
   console.log('Recording callback received:', JSON.stringify(req.body));
 
-  const agentName = req.query.agent
-    || req.body.CallerName
-    || req.body.caller_name
-    || 'Unknown Agent';
+  // Step 1: try query param (set in <Record> tag)
+  let agentName = req.query.agent;
+
+  // Step 2: if missing or generic, map from CallerName (SIP username)
+  if ((!agentName || agentName === 'Agent') && req.body.CallerName) {
+    const sipUsername = req.body.CallerName;
+    const foundAgent = agents.find(a => a.username === sipUsername);
+    if (foundAgent) agentName = foundAgent.name;  // e.g., "Agent 2", "Agent 3"
+  }
+
+  // Step 3: fallback
+  if (!agentName) agentName = 'Unknown Agent';
+
+  // Convert duration: Plivo may send "-1" for short calls
+  let duration = req.body.RecordingDuration || req.body.recording_duration || 0;
+  if (duration === "-1" || duration === -1) duration = 0;
 
   const newCall = {
     id:           req.body.CallUUID          || req.body.call_uuid          || 'call_' + Date.now(),
     agent:        agentName,
     to:           req.body.To                || req.body.to                 || '',
-    duration:     req.body.RecordingDuration || req.body.recording_duration || '0',
+    duration:     duration,
     recordingUrl: req.body.RecordUrl         || req.body.record_url         || '',
     time:         new Date().toISOString(),
     status:       'completed'
@@ -180,6 +192,8 @@ app.get('/calls', (req, res) => {
   res.json(filteredHistory);
 });
 
+// Optional: keep /log-call for manual entries but typically avoid duplicates.
+// You may disable it by commenting the endpoint or removing frontend calls.
 app.post('/log-call', (req, res) => {
   const { to, agent, status, duration } = req.body;
   const newCall = {
