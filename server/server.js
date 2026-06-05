@@ -16,7 +16,7 @@ const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUT
 
 // Persistence for Agents and Calls
 const DATA_DIR = path.join(__dirname, '../data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); // FIXED: recursive added
 
 const CALLS_FILE = path.join(DATA_DIR, 'calls.json');
 const AGENTS_FILE = path.join(DATA_DIR, 'agents.json');
@@ -142,18 +142,26 @@ app.post('/answer', (req, res) => {
   res.send(xml);
 });
 
+// FIXED: Recording callback — handles all Plivo field name formats
 app.post('/recording', (req, res) => {
-  console.log('Recording callback:', req.body);
-  const agentName = req.query.agent || 'Unknown Agent';
+  console.log('Recording callback received:', JSON.stringify(req.body));
+
+  const agentName = req.query.agent
+    || req.body.CallerName
+    || req.body.caller_name
+    || 'Unknown Agent';
+
   const newCall = {
-    id: req.body.CallUUID,
-    agent: agentName,
-    to: req.body.To,
-    duration: req.body.RecordingDuration,
-    recordingUrl: req.body.RecordUrl,
-    time: new Date().toISOString(),
-    status: 'completed'
+    id:           req.body.CallUUID          || req.body.call_uuid          || 'call_' + Date.now(),
+    agent:        agentName,
+    to:           req.body.To                || req.body.to                 || '',
+    duration:     req.body.RecordingDuration || req.body.recording_duration || '0',
+    recordingUrl: req.body.RecordUrl         || req.body.record_url         || '',
+    time:         new Date().toISOString(),
+    status:       'completed'
   };
+
+  console.log('Saving call record:', JSON.stringify(newCall));
   callHistory.push(newCall);
   saveData(CALLS_FILE, callHistory);
   res.sendStatus(200);
@@ -189,11 +197,9 @@ app.post('/log-call', (req, res) => {
 
 app.post('/hangup-call', async (req, res) => {
   const { uuid } = req.body;
-
   if (!uuid) {
     return res.status(400).json({ error: 'uuid is required' });
   }
-
   try {
     await client.calls.hangup(uuid);
     res.json({ success: true });
@@ -217,7 +223,6 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
