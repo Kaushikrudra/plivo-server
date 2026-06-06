@@ -174,19 +174,33 @@ app.delete('/agents/:username', async (req, res) => {
 app.get('/token', async (req, res) => {
   const requestedUsername = req.query.username;
   try {
+    // Ab SELECT mein 'number' column bhi la rahe hain
     const { rows } = await pool.query(
-      'SELECT username, password FROM agents WHERE username=$1',
+      'SELECT username, password, number FROM agents WHERE username=$1',
       [requestedUsername]
     );
-    if (rows.length > 0) {
-      console.log(`🔑 Token for: ${rows[0].username}`);
-      return res.json({ username: rows[0].username, password: rows[0].password });
+    let agent = rows[0];
+    if (!agent) {
+      // Fallback: koi bhi agent (role='agent')
+      const { rows: fallback } = await pool.query(
+        'SELECT username, password, number FROM agents WHERE role=$1 LIMIT 1',
+        ['agent']
+      );
+      agent = fallback[0];
+      if (!agent) return res.json({ username: '', password: '' });
     }
-    const { rows: fallback } = await pool.query(
-      'SELECT username, password FROM agents WHERE role=$1 LIMIT 1', ['agent']
-    );
-    res.json(fallback[0] || { username: '', password: '' });
+    
+    // Extract real SIP username from 'number' column (which stores sip:long@phone.plivo.com)
+    let sipUsername = agent.username;  // fallback agar number column me kuch na ho
+    if (agent.number && agent.number.includes('sip:')) {
+      const match = agent.number.match(/sip:(.+?)@/);
+      if (match && match[1]) sipUsername = match[1];
+    }
+    
+    console.log(`🔑 Token requested for: ${requestedUsername}, returning SIP user: ${sipUsername}`);
+    res.json({ username: sipUsername, password: agent.password });
   } catch (err) {
+    console.error('❌ Token error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
