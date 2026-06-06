@@ -12,7 +12,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+
+// Initialize Plivo client with validation
+let client = null;
+if (process.env.PLIVO_AUTH_ID && process.env.PLIVO_AUTH_TOKEN) {
+  try {
+    client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
+    console.log('✅ Plivo client initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize Plivo client:', error.message);
+  }
+} else {
+  console.warn('⚠️  Plivo credentials missing (PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN). Calling features will be disabled.');
+}
 
 // Persistence for Agents and Calls
 const DATA_DIR = path.join(__dirname, '../data');
@@ -24,14 +36,22 @@ const AGENTS_FILE = path.join(DATA_DIR, 'agents.json');
 const loadData = (file, defaultValue) => {
   if (!fs.existsSync(file)) return defaultValue;
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    console.log(`📂 Loaded ${Array.isArray(data) ? data.length : 'data'} items from ${path.basename(file)}`);
+    return data;
   } catch (e) {
+    console.error(`❌ Error loading ${file}:`, e.message);
     return defaultValue;
   }
 };
 
 const saveData = (file, data) => {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    console.log(`💾 Saved ${Array.isArray(data) ? data.length : 'data'} items to ${path.basename(file)}`);
+  } catch (e) {
+    console.error(`❌ Error saving ${file}:`, e.message);
+  }
 };
 
 let callHistory = loadData(CALLS_FILE, []);
@@ -70,14 +90,46 @@ app.post('/login', (req, res) => {
 });
 
 app.post('/agents', (req, res) => {
-  const { name, username, password } = req.body;
+  const { name, username, password, number } = req.body;
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'All fields are required' });
   }
-  const newAgent = { name, username, password, role: 'agent' };
+
+  // Check for duplicate username
+  const existingAgent = agents.find(a => a.username === username);
+  if (existingAgent) {
+    console.warn(`⚠️ Attempt to create duplicate agent: ${username}`);
+    return res.status(400).json({ error: 'Agent ID already exists' });
+  }
+
+  const newAgent = { name, username, password, number: number || '', role: 'agent' };
   agents.push(newAgent);
+  console.log(`👤 New agent created: ${username}`);
   saveData(AGENTS_FILE, agents);
   res.json(newAgent);
+});
+
+app.put('/agents/:username', (req, res) => {
+  const { username } = req.params;
+  const { name, password, number } = req.body;
+  
+  console.log(`🔄 Update request for agent: ${username}`, { name, number });
+  
+  const agentIndex = agents.findIndex((a) => a.username === username);
+  
+  if (agentIndex === -1) {
+    console.error(`❌ Agent not found for update: ${username}`);
+    return res.status(404).json({ error: 'Agent not found' });
+  }
+  
+  // Update fields if provided
+  if (name) agents[agentIndex].name = name;
+  if (password) agents[agentIndex].password = password;
+  if (number !== undefined) agents[agentIndex].number = number;
+  
+  saveData(AGENTS_FILE, agents);
+  console.log(`✅ Agent updated successfully: ${username}`);
+  res.json(agents[agentIndex]);
 });
 
 app.delete('/agents/:username', (req, res) => {
@@ -85,25 +137,40 @@ app.delete('/agents/:username', (req, res) => {
   const initialLength = agents.length;
   agents = agents.filter((agent) => agent.username !== username);
   if (agents.length === initialLength) {
+    console.error(`❌ Agent not found for deletion: ${username}`);
     return res.status(404).json({ error: 'Agent not found' });
   }
+  console.log(`🗑️ Agent deleted: ${username}`);
   saveData(AGENTS_FILE, agents);
   res.json({ success: true });
 });
 
+// ── FIXED: Token endpoint — har agent apne credentials se login kare ──
+// Pehle sirf 'zohoagent' se start hone wale usernames support hote the
+// Ab koi bhi username kaam karega — multiple agents ke liye
 app.get('/token', (req, res) => {
   const requestedUsername = req.query.username;
-  const credentials = agents.find((agent) => agent.username === requestedUsername) || agents[0];
+  const agent = agents.find((a) => a.username === requestedUsername) || agents[0];
+  console.log(`🔑 Token requested for: ${requestedUsername} → returning: ${agent.username}`);
   res.json({
-    username: credentials.username,
-    password: credentials.password
+    username: agent.username,
+    password: agent.password
   });
 });
 
 app.post('/answer', (req, res) => {
+  console.log('📞 Answer request received:', JSON.stringify(req.body));
   let to = req.body.To || req.body.to;
-  const agentName = req.body['X-PH-AgentName'] || 'Agent';
   
+  // Try to get agent name from custom header or CallerName
+  let agentName = req.body['X-PH-AgentName'];
+  if (!agentName && req.body.From) {
+    const callerId = req.body.From;
+    const agent = agents.find(a => callerId.includes(a.username));
+    if (agent) agentName = agent.name;
+  }
+  if (!agentName) agentName = 'Agent';
+
   let isSip = false;
   if (to) {
     if (to.startsWith('sip:') || to.includes('@') || to.startsWith('zohoagent')) {
@@ -138,13 +205,14 @@ app.post('/answer', (req, res) => {
   </Dial>
 </Response>`;
 
+  console.log(`📤 Sending XML response for ${agentName} calling ${to}`);
   res.set('Content-Type', 'text/xml');
   res.send(xml);
 });
 
 // IMPROVED: Recording callback with agent name mapping from SIP username (CallerName)
 app.post('/recording', (req, res) => {
-  console.log('Recording callback received:', JSON.stringify(req.body));
+  console.log('⏺️ Recording callback received:', JSON.stringify(req.body));
 
   // Step 1: try query param (set in <Record> tag)
   let agentName = req.query.agent;
@@ -153,7 +221,7 @@ app.post('/recording', (req, res) => {
   if ((!agentName || agentName === 'Agent') && req.body.CallerName) {
     const sipUsername = req.body.CallerName;
     const foundAgent = agents.find(a => a.username === sipUsername);
-    if (foundAgent) agentName = foundAgent.name;  // e.g., "Agent 2", "Agent 3"
+    if (foundAgent) agentName = foundAgent.name;
   }
 
   // Step 3: fallback
@@ -167,13 +235,13 @@ app.post('/recording', (req, res) => {
     id:           req.body.CallUUID          || req.body.call_uuid          || 'call_' + Date.now(),
     agent:        agentName,
     to:           req.body.To                || req.body.to                 || '',
-    duration:     duration,
+    duration:     parseInt(duration),
     recordingUrl: req.body.RecordUrl         || req.body.record_url         || '',
     time:         new Date().toISOString(),
     status:       'completed'
   };
 
-  console.log('Saving call record:', JSON.stringify(newCall));
+  console.log('📝 Saving call record to history:', JSON.stringify(newCall));
   callHistory.push(newCall);
   saveData(CALLS_FILE, callHistory);
   res.sendStatus(200);
@@ -192,8 +260,6 @@ app.get('/calls', (req, res) => {
   res.json(filteredHistory);
 });
 
-// Optional: keep /log-call for manual entries but typically avoid duplicates.
-// You may disable it by commenting the endpoint or removing frontend calls.
 app.post('/log-call', (req, res) => {
   const { to, agent, status, duration } = req.body;
   const newCall = {
@@ -238,5 +304,5 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
