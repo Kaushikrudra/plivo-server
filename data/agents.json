@@ -11,10 +11,4 @@
     "password": "Agent@1234",
     "role": "agent"
   },
-  {
-    "name": "Agent 2",
-    "username": "kaushikrudra",
-    "password": "Edwin123",
-    "role": "agent"
-  }
-]
+
