@@ -4,67 +4,82 @@ import express from 'express';
 import plivo from 'plivo';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import pg from 'pg';
 import fs from 'fs';
 
 dotenv.config();
 
+const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Initialize Plivo client with validation
+// ── PostgreSQL Connection ─────────────────────────────────────────────────────
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false }
+});
+
+// ── Initialize Tables ─────────────────────────────────────────────────────────
+async function initDB() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS agents (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        number VARCHAR(50) DEFAULT '',
+        role VARCHAR(50) DEFAULT 'agent',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS calls (
+        id VARCHAR(255) PRIMARY KEY,
+        agent VARCHAR(255),
+        "to" VARCHAR(50),
+        duration INTEGER DEFAULT 0,
+        recording_url TEXT DEFAULT '',
+        status VARCHAR(50) DEFAULT 'completed',
+        time TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    const { rows } = await pool.query('SELECT COUNT(*) FROM agents');
+    if (parseInt(rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO agents (name, username, password, role) VALUES
+        ('Administrator', 'admin', 'Admin@1234', 'admin'),
+        ('Agent 1', 'zohoagent170932965467135247620', 'Agent@1234', 'agent')
+        ON CONFLICT (username) DO NOTHING;
+      `);
+      console.log('✅ Default agents inserted');
+    }
+
+    console.log('✅ Database initialized successfully');
+  } catch (err) {
+    console.error('❌ Database init error:', err.message);
+  }
+}
+
+// ── Plivo Client ──────────────────────────────────────────────────────────────
 let client = null;
 if (process.env.PLIVO_AUTH_ID && process.env.PLIVO_AUTH_TOKEN) {
   try {
     client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-    console.log('✅ Plivo client initialized successfully');
-  } catch (error) {
-    console.error('❌ Failed to initialize Plivo client:', error.message);
+    console.log('✅ Plivo client initialized');
+  } catch (err) {
+    console.error('❌ Plivo init error:', err.message);
   }
-} else {
-  console.warn('⚠️  Plivo credentials missing (PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN). Calling features will be disabled.');
 }
-
-// Persistence for Agents and Calls
-const DATA_DIR = path.join(__dirname, '../data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-const CALLS_FILE = path.join(DATA_DIR, 'calls.json');
-const AGENTS_FILE = path.join(DATA_DIR, 'agents.json');
-
-const loadData = (file, defaultValue) => {
-  if (!fs.existsSync(file)) return defaultValue;
-  try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    console.log(`📂 Loaded ${Array.isArray(data) ? data.length : 'data'} items from ${path.basename(file)}`);
-    return data;
-  } catch (e) {
-    console.error(`❌ Error loading ${file}:`, e.message);
-    return defaultValue;
-  }
-};
-
-const saveData = (file, data) => {
-  try {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
-    console.log(`💾 Saved ${Array.isArray(data) ? data.length : 'data'} items to ${path.basename(file)}`);
-  } catch (e) {
-    console.error(`❌ Error saving ${file}:`, e.message);
-  }
-};
-
-let callHistory = loadData(CALLS_FILE, []);
-let agents = loadData(AGENTS_FILE, [
-  { name: 'Administrator', username: 'admin', password: 'Admin@1234', role: 'admin' },
-  { name: 'Agent 1', username: 'zohoagent170932965467135247620', password: 'Agent@1234', role: 'agent' }
-]);
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from the React build folder or public folder
 const distPath = path.join(__dirname, '../dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
@@ -72,131 +87,144 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(path.join(__dirname, '../public')));
 }
 
-// Agent Endpoints
-app.get('/agents', (req, res) => {
-  const safeAgents = agents.map(({ password, ...rest }) => rest);
-  res.json(safeAgents);
-});
-
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const agent = agents.find((a) => a.username === username && a.password === password);
-  if (agent) {
-    const { password, ...safeAgent } = agent;
-    res.json({ success: true, agent: safeAgent });
-  } else {
-    res.status(401).json({ error: 'Invalid credentials' });
+// ── AGENTS ────────────────────────────────────────────────────────────────────
+app.get('/agents', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, username, number, role FROM agents ORDER BY created_at'
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/agents', (req, res) => {
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, username, number, role FROM agents WHERE username=$1 AND password=$2',
+      [username, password]
+    );
+    if (rows.length > 0) {
+      res.json({ success: true, agent: rows[0] });
+    } else {
+      res.status(401).json({ error: 'Invalid credentials' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/agents', async (req, res) => {
   const { name, username, password, number } = req.body;
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'All fields are required' });
   }
-
-  // Check for duplicate username
-  const existingAgent = agents.find(a => a.username === username);
-  if (existingAgent) {
-    console.warn(`⚠️ Attempt to create duplicate agent: ${username}`);
-    return res.status(400).json({ error: 'Agent ID already exists' });
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO agents (name, username, password, number, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [name, username, password, number || '', 'agent']
+    );
+    console.log(`👤 New agent created: ${username}`);
+    res.json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      res.status(400).json({ error: 'Agent ID already exists' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
   }
-
-  const newAgent = { name, username, password, number: number || '', role: 'agent' };
-  agents.push(newAgent);
-  console.log(`👤 New agent created: ${username}`);
-  saveData(AGENTS_FILE, agents);
-  res.json(newAgent);
 });
 
-app.put('/agents/:username', (req, res) => {
+app.put('/agents/:username', async (req, res) => {
   const { username } = req.params;
   const { name, password, number } = req.body;
-  
-  console.log(`🔄 Update request for agent: ${username}`, { name, number });
-  
-  const agentIndex = agents.findIndex((a) => a.username === username);
-  
-  if (agentIndex === -1) {
-    console.error(`❌ Agent not found for update: ${username}`);
-    return res.status(404).json({ error: 'Agent not found' });
+  try {
+    let query, params;
+    if (password) {
+      query = 'UPDATE agents SET name=$1, password=$2, number=$3 WHERE username=$4 RETURNING *';
+      params = [name, password, number || '', username];
+    } else {
+      query = 'UPDATE agents SET name=$1, number=$2 WHERE username=$3 RETURNING *';
+      params = [name, number || '', username];
+    }
+    const { rows } = await pool.query(query, params);
+    if (rows.length === 0) return res.status(404).json({ error: 'Agent not found' });
+    console.log(`✅ Agent updated: ${username}`);
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  
-  // Update fields if provided
-  if (name) agents[agentIndex].name = name;
-  if (password) agents[agentIndex].password = password;
-  if (number !== undefined) agents[agentIndex].number = number;
-  
-  saveData(AGENTS_FILE, agents);
-  console.log(`✅ Agent updated successfully: ${username}`);
-  res.json(agents[agentIndex]);
 });
 
-app.delete('/agents/:username', (req, res) => {
+app.delete('/agents/:username', async (req, res) => {
   const { username } = req.params;
-  const initialLength = agents.length;
-  agents = agents.filter((agent) => agent.username !== username);
-  if (agents.length === initialLength) {
-    console.error(`❌ Agent not found for deletion: ${username}`);
-    return res.status(404).json({ error: 'Agent not found' });
+  try {
+    const { rowCount } = await pool.query('DELETE FROM agents WHERE username=$1', [username]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Agent not found' });
+    console.log(`🗑️ Agent deleted: ${username}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  console.log(`🗑️ Agent deleted: ${username}`);
-  saveData(AGENTS_FILE, agents);
-  res.json({ success: true });
 });
 
-// ── FIXED: Token endpoint — har agent apne credentials se login kare ──
-// Pehle sirf 'zohoagent' se start hone wale usernames support hote the
-// Ab koi bhi username kaam karega — multiple agents ke liye
-app.get('/token', (req, res) => {
+// ── TOKEN ─────────────────────────────────────────────────────────────────────
+app.get('/token', async (req, res) => {
   const requestedUsername = req.query.username;
-  const agent = agents.find((a) => a.username === requestedUsername) || agents[0];
-  console.log(`🔑 Token requested for: ${requestedUsername} → returning: ${agent.username}`);
-  res.json({
-    username: agent.username,
-    password: agent.password
-  });
+  try {
+    const { rows } = await pool.query(
+      'SELECT username, password FROM agents WHERE username=$1',
+      [requestedUsername]
+    );
+    if (rows.length > 0) {
+      console.log(`🔑 Token for: ${rows[0].username}`);
+      return res.json({ username: rows[0].username, password: rows[0].password });
+    }
+    const { rows: fallback } = await pool.query(
+      'SELECT username, password FROM agents WHERE role=$1 LIMIT 1', ['agent']
+    );
+    res.json(fallback[0] || { username: '', password: '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/answer', (req, res) => {
-  console.log('📞 Answer request received:', JSON.stringify(req.body));
+// ── ANSWER ────────────────────────────────────────────────────────────────────
+app.post('/answer', async (req, res) => {
+  console.log('📞 Answer:', JSON.stringify(req.body));
   let to = req.body.To || req.body.to;
-  
-  // Try to get agent name from custom header or CallerName
   let agentName = req.body['X-PH-AgentName'];
+
   if (!agentName && req.body.From) {
-    const callerId = req.body.From;
-    const agent = agents.find(a => callerId.includes(a.username));
-    if (agent) agentName = agent.name;
+    try {
+      const { rows } = await pool.query(
+        "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%'",
+        [req.body.From]
+      );
+      if (rows.length > 0) agentName = rows[0].name;
+    } catch (e) {}
   }
   if (!agentName) agentName = 'Agent';
 
   let isSip = false;
   if (to) {
-    if (to.startsWith('sip:') || to.includes('@') || to.startsWith('zohoagent')) {
+    if (to.startsWith('sip:') || to.includes('@') || to.startsWith('zohoagent') || to.startsWith('edwinagent')) {
       isSip = true;
       if (!to.startsWith('sip:')) {
-        if (!to.includes('@')) {
-          to = `sip:${to}@phone.plivo.com`;
-        } else {
-          to = `sip:${to}`;
-        }
+        to = to.includes('@') ? `sip:${to}` : `sip:${to}@phone.plivo.com`;
       }
     } else {
       const hasPlus = to.startsWith('+');
       const digits = to.replace(/\D/g, '');
-      if (hasPlus) {
-        to = '+' + digits;
-      } else if (digits.length === 10) {
-        to = '+91' + digits;
-      } else {
-        to = '+' + digits;
-      }
+      if (hasPlus) to = '+' + digits;
+      else if (digits.length === 10) to = '+91' + digits;
+      else to = '+' + digits;
     }
   }
 
   const dialElement = isSip ? `<User>${to}</User>` : `<Number>${to}</Number>`;
-  
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Record action="${process.env.RENDER_URL}/recording?agent=${encodeURIComponent(agentName)}" startOnDialAnswer="true" redirect="false" maxLength="3600"/>
@@ -205,94 +233,73 @@ app.post('/answer', (req, res) => {
   </Dial>
 </Response>`;
 
-  console.log(`📤 Sending XML response for ${agentName} calling ${to}`);
-  res.set('Content-Type', 'text/xml');
-  res.send(xml);
+  res.set('Content-Type', 'text/xml').send(xml);
 });
 
-// IMPROVED: Recording callback with agent name mapping from SIP username (CallerName)
-app.post('/recording', (req, res) => {
-  console.log('⏺️ Recording callback received:', JSON.stringify(req.body));
+// ── RECORDING ─────────────────────────────────────────────────────────────────
+app.post('/recording', async (req, res) => {
+  console.log('⏺️ Recording:', JSON.stringify(req.body));
 
-  // Step 1: try query param (set in <Record> tag)
   let agentName = req.query.agent;
-
-  // Step 2: if missing or generic, map from CallerName (SIP username)
-  if ((!agentName || agentName === 'Agent') && req.body.CallerName) {
-    const sipUsername = req.body.CallerName;
-    const foundAgent = agents.find(a => a.username === sipUsername);
-    if (foundAgent) agentName = foundAgent.name;
+  if (!agentName || agentName === 'Agent') {
+    try {
+      const { rows } = await pool.query(
+        'SELECT name FROM agents WHERE username=$1', [req.body.CallerName]
+      );
+      if (rows.length > 0) agentName = rows[0].name;
+    } catch (e) {}
   }
-
-  // Step 3: fallback
   if (!agentName) agentName = 'Unknown Agent';
 
-  // Convert duration: Plivo may send "-1" for short calls
-  let duration = req.body.RecordingDuration || req.body.recording_duration || 0;
-  if (duration === "-1" || duration === -1) duration = 0;
+  let duration = req.body.RecordingDuration || 0;
+  if (duration === '-1' || duration === -1) duration = 0;
 
-  const newCall = {
-    id:           req.body.CallUUID          || req.body.call_uuid          || 'call_' + Date.now(),
-    agent:        agentName,
-    to:           req.body.To                || req.body.to                 || '',
-    duration:     parseInt(duration),
-    recordingUrl: req.body.RecordUrl         || req.body.record_url         || '',
-    time:         new Date().toISOString(),
-    status:       'completed'
-  };
+  const callId = req.body.CallUUID || req.body.call_uuid || 'call_' + Date.now();
 
-  console.log('📝 Saving call record to history:', JSON.stringify(newCall));
-  callHistory.push(newCall);
-  saveData(CALLS_FILE, callHistory);
+  try {
+    await pool.query(
+      'INSERT INTO calls (id, agent, "to", duration, recording_url, status, time) VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT (id) DO NOTHING',
+      [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), req.body.RecordUrl || req.body.record_url || '', 'completed']
+    );
+    console.log(`📝 Call saved: ${callId}`);
+  } catch (err) {
+    console.error('❌ Save call error:', err.message);
+  }
   res.sendStatus(200);
 });
 
-app.get('/calls', (req, res) => {
+// ── CALLS ─────────────────────────────────────────────────────────────────────
+app.get('/calls', async (req, res) => {
   const { username, role } = req.query;
-  if (role === 'admin' || !username) {
-    return res.json(callHistory);
-  }
-  const agent = agents.find((a) => a.username === username);
-  const agentName = agent ? agent.name : username;
-  const filteredHistory = callHistory.filter(
-    (call) => call.agent && call.agent.toLowerCase() === agentName.toLowerCase()
-  );
-  res.json(filteredHistory);
-});
-
-app.post('/log-call', (req, res) => {
-  const { to, agent, status, duration } = req.body;
-  const newCall = {
-    id: 'local_' + Date.now(),
-    agent: agent || 'Unknown Agent',
-    to: to || 'Unknown',
-    duration: duration || 0,
-    time: new Date().toISOString(),
-    status: status || 'completed'
-  };
-  callHistory.push(newCall);
-  saveData(CALLS_FILE, callHistory);
-  res.json({ success: true, call: newCall });
-});
-
-app.post('/hangup-call', async (req, res) => {
-  const { uuid } = req.body;
-  if (!uuid) {
-    return res.status(400).json({ error: 'uuid is required' });
-  }
   try {
-    await client.calls.hangup(uuid);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (role === 'admin' || !username) {
+      const { rows } = await pool.query('SELECT * FROM calls ORDER BY time ASC');
+      return res.json(rows.map(r => ({
+        id: r.id, agent: r.agent, to: r.to,
+        duration: r.duration, recordingUrl: r.recording_url,
+        time: r.time, status: r.status
+      })));
+    }
+    const { rows: agentRows } = await pool.query(
+      'SELECT name FROM agents WHERE username=$1', [username]
+    );
+    const agentName = agentRows[0]?.name || username;
+    const { rows } = await pool.query(
+      'SELECT * FROM calls WHERE LOWER(agent)=LOWER($1) ORDER BY time ASC', [agentName]
+    );
+    res.json(rows.map(r => ({
+      id: r.id, agent: r.agent, to: r.to,
+      duration: r.duration, recordingUrl: r.recording_url,
+      time: r.time, status: r.status
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/status', (req, res) => {
-  res.json({ status: 'running' });
-});
+app.get('/status', (req, res) => res.json({ status: 'running' }));
 
-// Fallback for React Router
+// ── FALLBACK ──────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   const distIndex = path.join(__dirname, '../dist/index.html');
   if (fs.existsSync(distIndex)) {
@@ -302,7 +309,9 @@ app.use((req, res) => {
   }
 });
 
+// ── START ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  await initDB();
 });
