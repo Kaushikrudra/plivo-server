@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -122,6 +121,13 @@
       </div>
 
       <form class="space-y-6" id="loginForm">
+        <!-- Role Selection Toggle -->
+        <div class="flex p-1 bg-slate-100 rounded-2xl mb-8">
+            <button type="button" id="roleAgentBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all bg-white shadow-sm text-blue-600">User (Agent)</button>
+            <button type="button" id="roleAdminBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">Administrator</button>
+            <input type="hidden" id="selectedRole" value="agent">
+        </div>
+
         <div>
           <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Username / ID</label>
           <input id="agentIdInput" type="text" required placeholder="Enter username..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
@@ -130,9 +136,28 @@
           <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Access Password</label>
           <input id="agentPasswordInput" type="password" required placeholder="••••••••" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
         </div>
+        
+        <div class="flex items-center justify-between px-1">
+            <label class="flex items-center gap-2 cursor-pointer group">
+                <input type="checkbox" id="rememberMe" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                <span class="text-xs font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Remember me</span>
+            </label>
+            <button type="button" id="forgotPasswordBtn" class="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors">Forgot password?</button>
+        </div>
+
+        <div class="px-1">
+            <label class="flex items-start gap-3 cursor-pointer group">
+                <input type="checkbox" id="acceptTerms" required class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                <span class="text-xs font-medium text-slate-500 leading-relaxed">
+                    I agree to the <a href="#" class="text-blue-600 hover:underline">Terms of Use</a> and 
+                    <a href="#" class="text-blue-600 hover:underline">Privacy Policy</a>
+                </span>
+            </label>
+        </div>
+
         <div id="loginError" class="hidden p-4 rounded-2xl bg-rose-50 text-rose-600 text-sm border border-rose-100 flex items-center gap-3">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-            <span class="font-bold">Invalid credentials, try again.</span>
+            <span id="errorMessage" class="font-bold">Invalid credentials, try again.</span>
         </div>
         <button type="submit" class="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
           Authenticate
@@ -578,17 +603,74 @@
 
     function updateButtons() { const hasNumber = document.getElementById('numberInput').value.trim().length > 0; document.getElementById('callButton').disabled = !sdkReady || callActive || !hasNumber; document.getElementById('hangupButton').disabled = !callActive; document.getElementById('muteButton').disabled = !callActive; }
 
+    // Role Toggle Logic
+    const roleAgentBtn = document.getElementById('roleAgentBtn');
+    const roleAdminBtn = document.getElementById('roleAdminBtn');
+    const selectedRoleInput = document.getElementById('selectedRole');
+
+    roleAgentBtn.addEventListener('click', () => {
+        selectedRoleInput.value = 'agent';
+        roleAgentBtn.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAgentBtn.classList.remove('text-slate-500');
+        roleAdminBtn.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAdminBtn.classList.add('text-slate-500');
+    });
+
+    roleAdminBtn.addEventListener('click', () => {
+        selectedRoleInput.value = 'admin';
+        roleAdminBtn.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAdminBtn.classList.remove('text-slate-500');
+        roleAgentBtn.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAgentBtn.classList.add('text-slate-500');
+    });
+
+    // Forgot Password Logic
+    document.getElementById('forgotPasswordBtn').addEventListener('click', () => {
+        showToast('Please contact your system administrator to reset password.', 'error');
+    });
+
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        const acceptTerms = document.getElementById('acceptTerms').checked;
+        if (!acceptTerms) {
+            showToast('You must agree to the Terms & Conditions', 'error');
+            return;
+        }
+
         const username = document.getElementById('agentIdInput').value.trim();
         const password = document.getElementById('agentPasswordInput').value.trim();
+        const selectedRole = selectedRoleInput.value;
+        const rememberMe = document.getElementById('rememberMe').checked;
+        const errorDiv = document.getElementById('loginError');
+        const errorMsg = document.getElementById('errorMessage');
+
         try {
-            const res = await fetch(`${SERVER}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+            const res = await fetch(`${SERVER}/login`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ username, password }) 
+            });
+            
             if (res.ok) {
                 const data = await res.json();
                 const agent = data.agent;
+
+                // Role mismatch check
+                if (agent.role !== selectedRole) {
+                    errorDiv.classList.remove('hidden');
+                    errorMsg.textContent = `Role mismatch: This account is not an ${selectedRole === 'admin' ? 'Administrator' : 'Agent'}.`;
+                    return;
+                }
+
                 loggedInAgent = agent;
-                localStorage.setItem('loggedInAgent', JSON.stringify(agent));
+                
+                if (rememberMe) {
+                    localStorage.setItem('loggedInAgent', JSON.stringify(agent));
+                } else {
+                    sessionStorage.setItem('loggedInAgent', JSON.stringify(agent));
+                }
+
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('softphoneScreen').classList.remove('hidden');
                 document.getElementById('softphoneScreen').classList.add('flex');
@@ -610,8 +692,16 @@
                 }
                 showToast('Welcome back, ' + agent.name);
                 fetchHistory();
-            } else { document.getElementById('loginError').classList.remove('hidden'); }
-        } catch(err) { document.getElementById('loginError').classList.remove('hidden'); }
+                errorDiv.classList.add('hidden');
+            } else { 
+                const data = await res.json();
+                errorDiv.classList.remove('hidden'); 
+                errorMsg.textContent = data.error || 'Invalid credentials, try again.';
+            }
+        } catch(err) { 
+            errorDiv.classList.remove('hidden'); 
+            errorMsg.textContent = 'Connection error, please try again.';
+        }
     });
 
     document.getElementById('addAgentForm').addEventListener('submit', async (e) => { 
@@ -674,12 +764,16 @@
     document.getElementById('hangupButton').addEventListener('click', () => { if(plivoBrowserSdk) plivoBrowserSdk.client.hangup(); });
     document.querySelectorAll('[data-key]').forEach(btn => { btn.addEventListener('click', () => { document.getElementById('numberInput').value += btn.dataset.key; updateButtons(); }); });
     document.getElementById('numberInput').addEventListener('input', updateButtons);
-    document.getElementById('logoutButton').addEventListener('click', () => { localStorage.removeItem('loggedInAgent'); location.reload(); });
+    document.getElementById('logoutButton').addEventListener('click', () => { 
+        localStorage.removeItem('loggedInAgent'); 
+        sessionStorage.removeItem('loggedInAgent');
+        location.reload(); 
+    });
 
     window.onload = async () => {
         await fetchAgents();
         initCharts();
-        const savedAgent = localStorage.getItem('loggedInAgent');
+        const savedAgent = localStorage.getItem('loggedInAgent') || sessionStorage.getItem('loggedInAgent');
         if (savedAgent) {
             const agent = JSON.parse(savedAgent);
             loggedInAgent = agent;
