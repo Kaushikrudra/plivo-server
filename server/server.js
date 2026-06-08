@@ -271,13 +271,24 @@ app.post('/recording', async (req, res) => {
   }
 
   const callId = req.body.CallUUID || req.body.call_uuid || 'call_' + Date.now();
+  
+  // Sanitize recording URL: Ensure it's a direct media URL and ends with .mp3
+  let recordingUrl = req.body.RecordingUrl || req.body.RecordUrl || req.body.record_url || '';
+  if (recordingUrl) {
+    // If it's an API URL, convert to media URL (simple replacement usually works for Plivo)
+    recordingUrl = recordingUrl.replace('api.plivo.com', 'media.plivo.com');
+    // Ensure it has .mp3 extension
+    if (!recordingUrl.endsWith('.mp3')) {
+      recordingUrl = recordingUrl + '.mp3';
+    }
+  }
 
   try {
     await pool.query(
       'INSERT INTO calls (id, agent, "to", duration, recording_url, status, time) VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT (id) DO NOTHING',
-      [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), req.body.RecordingUrl || req.body.RecordUrl || req.body.record_url || '', 'completed']
+      [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, 'completed']
     );
-    console.log(`📝 Call saved: ${callId}`);
+    console.log(`📝 Call saved: ${callId} | URL: ${recordingUrl}`);
   } catch (err) {
     console.error('❌ Save call error:', err.message);
   }
