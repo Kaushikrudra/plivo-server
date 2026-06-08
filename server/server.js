@@ -275,7 +275,7 @@ app.post('/recording', async (req, res) => {
   try {
     await pool.query(
       'INSERT INTO calls (id, agent, "to", duration, recording_url, status, time) VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT (id) DO NOTHING',
-      [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), req.body.RecordUrl || req.body.record_url || '', 'completed']
+      [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), req.body.RecordingUrl || req.body.RecordUrl || req.body.record_url || '', 'completed']
     );
     console.log(`📝 Call saved: ${callId}`);
   } catch (err) {
