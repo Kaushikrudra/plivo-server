@@ -564,8 +564,10 @@
         document.getElementById('fullHistoryBody').innerHTML = calls.length ? calls.slice().reverse().map(renderRow).join('') : '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
     }
 
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
     function playRecording(url, btn) {
-        // Simple inline player logic
         let audio = document.getElementById('globalRecordingPlayer');
         if (!audio) {
             audio = document.createElement('audio');
@@ -574,22 +576,42 @@
             document.body.appendChild(audio);
         }
         
+        const originalContent = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>Listen</span>';
+        const stopContent = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg><span>Stop</span>';
+        const processingContent = '<span class="animate-pulse">Processing...</span>';
+
         if (audio.src === url && !audio.paused) {
             audio.pause();
-            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>Listen</span>';
+            btn.innerHTML = originalContent;
+            retryCount = 0;
         } else {
             // Reset all other buttons
             document.querySelectorAll('button[onclick^="playRecording"]').forEach(b => {
-                b.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>Listen</span>';
+                b.innerHTML = originalContent;
             });
+            
             audio.src = url;
-            audio.play().catch(e => {
-                showToast('Cannot play recording. URL might be expired or invalid.', 'error');
-                console.error('Playback error:', e);
+            btn.innerHTML = processingContent;
+
+            audio.play().then(() => {
+                btn.innerHTML = stopContent;
+                retryCount = 0;
+            }).catch(e => {
+                console.warn('Playback attempt failed', e);
+                if (retryCount < MAX_RETRIES) {
+                    retryCount++;
+                    showToast(`Recording is being processed (${retryCount}/${MAX_RETRIES}). Retrying...`, 'info');
+                    setTimeout(() => playRecording(url, btn), 3000);
+                } else {
+                    btn.innerHTML = originalContent;
+                    showToast('Recording not ready yet. Plivo is still processing the file. Please try again in 10 seconds.', 'error');
+                    retryCount = 0;
+                }
             });
-            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg><span>Stop</span>';
+
             audio.onended = () => {
-                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>Listen</span>';
+                btn.innerHTML = originalContent;
+                retryCount = 0;
             };
         }
     }
