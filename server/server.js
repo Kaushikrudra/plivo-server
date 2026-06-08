@@ -241,8 +241,7 @@ app.post('/answer', async (req, res) => {
   const dialElement = isSip ? `<User>${to}</User>` : `<Number>${to}</Number>`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Record action="${process.env.RENDER_URL}/recording?agent=${encodeURIComponent(agentName)}" startOnDialAnswer="true" redirect="false" maxLength="3600"/>
-  <Dial callerId="${process.env.PLIVO_NUMBER}">
+  <Dial callerId="${process.env.PLIVO_NUMBER}" record="true" recordingCallbackUrl="${process.env.RENDER_URL}/recording?agent=${encodeURIComponent(agentName)}" recordingCallbackMethod="POST">
     ${dialElement}
   </Dial>
 </Response>`;
@@ -265,8 +264,11 @@ app.post('/recording', async (req, res) => {
   }
   if (!agentName) agentName = 'Unknown Agent';
 
-  let duration = req.body.RecordingDuration || 0;
-  if (duration === '-1' || duration === -1) duration = 0;
+  // Map duration correctly: prefer Duration if RecordingDuration is invalid
+  let duration = req.body.RecordingDuration;
+  if (duration === '-1' || duration === -1 || !duration) {
+    duration = req.body.Duration || 0;
+  }
 
   const callId = req.body.CallUUID || req.body.call_uuid || 'call_' + Date.now();
 
