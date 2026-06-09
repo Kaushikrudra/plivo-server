@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zoho-Plivo | Professional Softphone</title>
+  <title>Edwin Calling Solution</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.plivo.com/sdk/browser/v2/plivo.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
@@ -56,6 +56,36 @@
     .fab-btn:hover { transform: scale(1.1) rotate(5deg); }
     .fab-btn:active { transform: scale(0.9); }
 
+    @media (max-width: 768px) {
+        aside {
+            position: fixed;
+            left: -100%;
+            height: 100%;
+            width: 280px !important;
+            z-index: 50;
+            transition: left 0.3s ease;
+        }
+        aside.mobile-open {
+            left: 0;
+        }
+        .main-content {
+            margin-left: 0 !important;
+        }
+        #mobileOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 40;
+        }
+        #mobileOverlay.show {
+            display: block;
+        }
+        .stats-grid {
+            grid-template-columns: 1fr !important;
+        }
+    }
+
     .play-btn {
       display: inline-flex;
       align-items: center;
@@ -103,6 +133,7 @@
 
   <!-- Toast Notification Container -->
   <div id="toastContainer"></div>
+  <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-40 hidden"></div>
 
   <!-- Login Screen -->
   <section id="loginScreen" class="min-h-screen flex items-center justify-center p-6 bg-[#0f172a] overflow-hidden relative">
@@ -112,57 +143,113 @@
     </div>
     
     <div class="w-full max-w-md glass p-10 rounded-[2.5rem] shadow-2xl relative z-10 border-white/10">
-      <div class="text-center mb-10">
-        <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-3xl shadow-xl shadow-blue-500/20 mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+      <!-- Login Container -->
+      <div id="loginContainer">
+        <div class="text-center mb-10">
+          <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-3xl shadow-xl shadow-blue-500/20 mb-6">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+          </div>
+          <h1 class="text-3xl font-black text-slate-900 tracking-tight">Agent Portal</h1>
+          <p class="text-slate-500 mt-2 font-medium">Please sign in to continue</p>
         </div>
-        <h1 class="text-3xl font-black text-slate-900 tracking-tight">Agent Portal</h1>
-        <p class="text-slate-500 mt-2 font-medium">Please sign in to continue</p>
+
+        <form class="space-y-6" id="loginForm">
+          <!-- Role Selection Toggle -->
+          <div class="flex p-1 bg-slate-100 rounded-2xl mb-8">
+              <button type="button" id="roleAgentBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all bg-white shadow-sm text-blue-600">User (Agent)</button>
+              <button type="button" id="roleAdminBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">Administrator</button>
+              <input type="hidden" id="selectedRole" value="agent">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Username / ID</label>
+            <input id="agentIdInput" type="text" required placeholder="Enter username..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Access Password</label>
+            <input id="agentPasswordInput" type="password" required placeholder="••••••••" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          
+          <div class="flex items-center justify-between px-1">
+              <label class="flex items-center gap-2 cursor-pointer group">
+                  <input type="checkbox" id="rememberMe" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-xs font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Remember me</span>
+              </label>
+              <button type="button" id="forgotPasswordBtn" class="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors">Forgot password?</button>
+          </div>
+
+          <div class="px-1">
+              <label class="flex items-start gap-3 cursor-pointer group">
+                  <input type="checkbox" id="acceptTerms" required class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-xs font-medium text-slate-500 leading-relaxed">
+                      I agree to the <a href="#" class="text-blue-600 hover:underline">Terms of Use</a> and 
+                      <a href="#" class="text-blue-600 hover:underline">Privacy Policy</a>
+                  </span>
+              </label>
+          </div>
+
+          <div id="loginError" class="hidden p-4 rounded-2xl bg-rose-50 text-rose-600 text-sm border border-rose-100 flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              <span id="errorMessage" class="font-bold">Invalid credentials, try again.</span>
+          </div>
+          <button type="submit" class="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
+            Authenticate
+          </button>
+          
+          <div class="text-center mt-6">
+            <p class="text-sm text-slate-500 font-medium">Don't have an account? <button type="button" onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline transition-all">Sign up</button></p>
+          </div>
+        </form>
       </div>
 
-      <form class="space-y-6" id="loginForm">
-        <!-- Role Selection Toggle -->
-        <div class="flex p-1 bg-slate-100 rounded-2xl mb-8">
-            <button type="button" id="roleAgentBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all bg-white shadow-sm text-blue-600">User (Agent)</button>
-            <button type="button" id="roleAdminBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">Administrator</button>
-            <input type="hidden" id="selectedRole" value="agent">
+      <!-- Signup Container -->
+      <div id="signupContainer" class="hidden">
+        <div class="text-center mb-10">
+          <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-3xl shadow-xl shadow-emerald-500/20 mb-6">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+          </div>
+          <h1 class="text-3xl font-black text-slate-900 tracking-tight">Admin Registration</h1>
+          <p class="text-slate-500 mt-2 font-medium">Create a new administrator account</p>
         </div>
 
-        <div>
-          <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Username / ID</label>
-          <input id="agentIdInput" type="text" required placeholder="Enter username..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Access Password</label>
-          <input id="agentPasswordInput" type="password" required placeholder="••••••••" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-        </div>
-        
-        <div class="flex items-center justify-between px-1">
-            <label class="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" id="rememberMe" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                <span class="text-xs font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Remember me</span>
-            </label>
-            <button type="button" id="forgotPasswordBtn" class="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors">Forgot password?</button>
-        </div>
+        <form class="space-y-6" id="signupForm">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Full Name</label>
+            <input id="signupNameInput" type="text" required placeholder="Enter your full name..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Username / ID</label>
+            <input id="signupUsernameInput" type="text" required placeholder="Choose a username..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Access Password</label>
+            <input id="signupPasswordInput" type="password" required placeholder="••••••••" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
 
-        <div class="px-1">
-            <label class="flex items-start gap-3 cursor-pointer group">
-                <input type="checkbox" id="acceptTerms" required class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                <span class="text-xs font-medium text-slate-500 leading-relaxed">
-                    I agree to the <a href="#" class="text-blue-600 hover:underline">Terms of Use</a> and 
-                    <a href="#" class="text-blue-600 hover:underline">Privacy Policy</a>
-                </span>
-            </label>
-        </div>
+          <div id="otpSection" class="hidden">
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Verification OTP</label>
+            <input id="signupOtpInput" type="text" placeholder="123456" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all tracking-widest font-mono text-center text-xl">
+            <p class="text-[10px] text-slate-400 mt-2 ml-1 text-center">OTP sent to configured mobile number</p>
+          </div>
 
-        <div id="loginError" class="hidden p-4 rounded-2xl bg-rose-50 text-rose-600 text-sm border border-rose-100 flex items-center gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-            <span id="errorMessage" class="font-bold">Invalid credentials, try again.</span>
-        </div>
-        <button type="submit" class="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
-          Authenticate
-        </button>
-      </form>
+          <div id="signupError" class="hidden p-4 rounded-2xl bg-rose-50 text-rose-600 text-sm border border-rose-100 flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              <span id="signupErrorMessage" class="font-bold">Error creating account.</span>
+          </div>
+
+          <button type="button" id="sendOtpBtn" class="w-full py-5 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black shadow-lg shadow-slate-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
+            Send OTP
+          </button>
+
+          <button type="submit" id="registerAdminBtn" class="hidden w-full py-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
+            Verify & Register Admin
+          </button>
+          
+          <div class="text-center mt-6">
+            <p class="text-sm text-slate-500 font-medium">Already have an account? <button type="button" onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline transition-all">Log in</button></p>
+          </div>
+        </form>
+      </div>
     </div>
   </section>
 
@@ -174,7 +261,7 @@
             <div class="bg-gradient-to-br from-blue-500 to-indigo-600 p-3 rounded-2xl shadow-xl shadow-blue-500/20 text-white">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
             </div>
-            <span class="text-white font-black text-2xl tracking-tighter hidden lg:block bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">ZohoCalls</span>
+            <span class="text-white font-black text-2xl tracking-tighter hidden lg:block bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">EdwinCalls</span>
         </div>
         <nav class="flex-1 space-y-4 w-full">
             <button onclick="switchView('dashboard')" id="nav-dashboard" class="flex items-center gap-5 text-white bg-blue-600/10 text-blue-400 p-4 rounded-[1.25rem] w-full text-left transition-all group">
@@ -299,9 +386,12 @@
                         <button onclick="toggleDialer()" class="p-1 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
                     </div>
                     <div class="p-5 flex flex-col">
-                        <div class="text-center mb-4">
+                        <div class="text-center mb-4 relative">
                             <div id="customerNameDisplay" class="text-[10px] font-semibold text-blue-600 mb-0.5 h-3"></div>
-                            <input id="numberInput" type="tel" placeholder="Enter number..." class="w-full text-center text-xl font-bold bg-transparent border-none outline-none placeholder:text-slate-300 text-slate-800">
+                            <input id="numberInput" type="tel" placeholder="Enter number..." class="w-full text-center text-xl font-bold bg-transparent border-none outline-none placeholder:text-slate-300 text-slate-800 pr-8">
+                            <button onclick="backspaceNumber()" class="absolute right-0 top-1/2 -translate-y-1/2 p-2 text-slate-300 hover:text-slate-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414A2 2 0 0010.828 19H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z"/></svg>
+                            </button>
                             <div id="timer" class="hidden text-slate-400 font-medium text-xs mt-0.5">00:00</div>
                         </div>
                         <div id="micBanner" class="hidden mb-3 p-2 bg-red-50 text-red-600 text-[10px] rounded-lg border border-red-100 text-center">Allow microphone access.</div>
@@ -481,6 +571,138 @@
     function toggleDialer() { const drawer = document.getElementById('dialerDrawer'); if (drawer.classList.contains('drawer-closed')) { document.getElementById('numberInput').value = ''; if (typeof updateButtons === 'function') updateButtons(); drawer.classList.remove('drawer-closed'); drawer.classList.add('drawer-open'); } else { drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); } }
     function closeDialer() { const drawer = document.getElementById('dialerDrawer'); drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); }
 
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+        sidebar.classList.toggle('mobile-open');
+        overlay.classList.toggle('hidden');
+    }
+
+    function toggleAuthMode() {
+        const loginContainer = document.getElementById('loginContainer');
+        const signupContainer = document.getElementById('signupContainer');
+        loginContainer.classList.toggle('hidden');
+        signupContainer.classList.toggle('hidden');
+        
+        // Reset OTP state when toggling
+        const otpSection = document.getElementById('otpSection');
+        if (otpSection) {
+            otpSection.classList.add('hidden');
+            document.getElementById('registerAdminBtn').classList.add('hidden');
+            document.getElementById('sendOtpBtn').classList.remove('hidden');
+            document.getElementById('signupOtpInput').value = '';
+            document.getElementById('signupOtpInput').required = false;
+            document.getElementById('signupUsernameInput').readOnly = false;
+            isOtpSent = false;
+        }
+    }
+
+    let isOtpSent = false;
+
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    if (sendOtpBtn) {
+        sendOtpBtn.addEventListener('click', async () => {
+            const username = document.getElementById('signupUsernameInput').value.trim();
+            const errorDiv = document.getElementById('signupError');
+            const errorMsg = document.getElementById('signupErrorMessage');
+            
+            if (!username) {
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = 'Please enter a Username to receive OTP.';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${SERVER}/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('OTP sent successfully!');
+                    errorDiv.classList.add('hidden');
+                    
+                    // Show OTP field
+                    document.getElementById('otpSection').classList.remove('hidden');
+                    document.getElementById('signupOtpInput').required = true;
+                    
+                    // Toggle buttons
+                    document.getElementById('sendOtpBtn').classList.add('hidden');
+                    document.getElementById('registerAdminBtn').classList.remove('hidden');
+                    
+                    // Lock username to prevent changing after OTP is sent for it
+                    document.getElementById('signupUsernameInput').readOnly = true;
+                    isOtpSent = true;
+                } else {
+                    errorDiv.classList.remove('hidden');
+                    errorMsg.textContent = data.error || 'Failed to send OTP.';
+                }
+            } catch (err) {
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = 'Connection error, could not send OTP.';
+            }
+        });
+    }
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!isOtpSent) return;
+
+        const name = document.getElementById('signupNameInput').value.trim();
+        const username = document.getElementById('signupUsernameInput').value.trim();
+        const password = document.getElementById('signupPasswordInput').value.trim();
+        const otp = document.getElementById('signupOtpInput').value.trim();
+        const errorDiv = document.getElementById('signupError');
+        const errorMsg = document.getElementById('signupErrorMessage');
+
+        try {
+            const res = await fetch(`${SERVER}/agents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, username, password, role: 'admin', otp })
+            });
+            if (res.ok) {
+                showToast('Admin account created successfully! Please log in.');
+                toggleAuthMode();
+                // Pre-fill login with new username
+                document.getElementById('agentIdInput').value = username;
+                document.getElementById('agentPasswordInput').value = '';
+            } else {
+                const data = await res.json();
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = data.error || 'Error creating account.';
+            }
+        } catch (err) {
+            errorDiv.classList.remove('hidden');
+            errorMsg.textContent = 'Connection error, please try again.';
+        }
+    });
+
+    function backspaceNumber() {
+        const input = document.getElementById('numberInput');
+        input.value = input.value.slice(0, -1);
+        updateButtons();
+    }
+
+    async function logCall(status, duration = 0) {
+        if (!loggedInAgent || !currentDialledNumber) return;
+        try {
+            await fetch(`${SERVER}/log-call`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: currentDialledNumber,
+                    agent: loggedInAgent.name,
+                    status: status,
+                    duration: duration
+                })
+            });
+        } catch (e) { console.error('Error logging call', e); }
+    }
+
     async function fetchAgents() {
         const filterSelect = document.getElementById('filterAgent');
         try {
@@ -553,12 +775,21 @@
                 </div>
             ` : '<span class="text-xs text-slate-300 italic">No recording</span>';
 
+            const reasonDisplay = call.reason && call.reason !== 'NORMAL_CLEARING' 
+                ? `<div class="text-[9px] text-slate-400 font-bold uppercase mt-0.5">${call.reason.replace(/_/g, ' ')}</div>` 
+                : '';
+
             return `<tr class="hover:bg-slate-50 transition-colors">
                 <td class="p-5 text-sm text-slate-600">${new Date(call.time).toLocaleString()}</td>
                 <td class="p-5 text-sm font-bold text-slate-800">${call.agent || 'Agent'}</td>
                 <td class="p-5 text-sm font-bold text-blue-600">${call.to}</td>
                 <td class="p-5 text-sm text-slate-500">${durationDisplay}s</td>
-                <td class="p-5 text-right">${recordingControl}</td>
+                <td class="p-5 text-right">
+                    <div class="flex flex-col items-end gap-1">
+                        ${recordingControl}
+                        ${reasonDisplay}
+                    </div>
+                </td>
             </tr>`;
         };
         document.getElementById('fullHistoryBody').innerHTML = calls.length ? calls.slice().reverse().map(renderRow).join('') : '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
@@ -666,8 +897,35 @@
             plivoBrowserSdk.client.on('onLoginFailed', () => { sdkReady = false; setStatus('Login Failed', 'error'); updateButtons(); });
             plivoBrowserSdk.client.on('onCalling', () => { callActive = true; setStatus('Calling...', 'calling'); updateButtons(); });
             plivoBrowserSdk.client.on('onCallAnswered', () => { setStatus('Connected', 'connected'); startTimer(); });
-            plivoBrowserSdk.client.on('onCallFailed', (reason) => { setStatus('Call Failed', 'error'); callActive = false; stopTimer(); updateButtons(); currentDialledNumber = ''; setTimeout(() => fetchHistory(), 3000); });
-            plivoBrowserSdk.client.on('onCallTerminated', () => { setStatus(sdkReady?'Ready':'Connecting', sdkReady?'ready':'connecting'); callActive = false; stopTimer(); updateButtons(); currentDialledNumber = ''; setTimeout(() => fetchHistory(), 4000); });
+            plivoBrowserSdk.client.on('onCallFailed', (reason) => { 
+                console.log('Call Failed Reason:', reason);
+                setStatus('Call Failed', 'error'); 
+                callActive = false; 
+                stopTimer(); 
+                updateButtons(); 
+                
+                // Only log failed calls that didn't even start (no backend action will trigger)
+                if (currentDialledNumber) {
+                    logCall('failed', 0);
+                }
+                currentDialledNumber = ''; 
+                setTimeout(() => fetchHistory(), 3000); 
+            });
+            plivoBrowserSdk.client.on('onCallTerminated', () => { 
+                setStatus(sdkReady?'Ready':'Connecting', sdkReady?'ready':'connecting'); 
+                callActive = false; 
+                stopTimer(); 
+                updateButtons(); 
+                
+                // Backend action/recording webhooks will handle connected calls.
+                // We only log locally if the call was extremely short or never connected.
+                if (currentDialledNumber && timerSeconds < 2) {
+                    logCall('completed', timerSeconds);
+                }
+                
+                currentDialledNumber = ''; 
+                setTimeout(() => fetchHistory(), 4000); 
+            });
             plivoBrowserSdk.client.login(creds.username, creds.password);
         } catch(e) { setStatus('Plivo Error', 'error'); }
     }
