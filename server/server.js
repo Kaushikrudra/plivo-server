@@ -44,7 +44,16 @@ async function initDB() {
         duration INTEGER DEFAULT 0,
         recording_url TEXT DEFAULT '',
         status VARCHAR(50) DEFAULT 'completed',
+        reason TEXT DEFAULT '',
         time TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS otps (
+        username VARCHAR(255) PRIMARY KEY,
+        otp VARCHAR(10) NOT NULL,
+        expires_at TIMESTAMP NOT NULL
       );
     `);
 
@@ -87,7 +96,49 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(path.join(__dirname, '../public')));
 }
 
-// ── AGENTS ────────────────────────────────────────────────────────────────────
+// ── AGENTS & AUTH ─────────────────────────────────────────────────────────────
+
+// Send OTP Endpoint
+app.post('/send-otp', async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ error: 'Username is required for OTP' });
+
+  // Generate a 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  // Set expiration to 10 minutes from now
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  try {
+    // Store OTP in database (upsert)
+    await pool.query(
+      `INSERT INTO otps (username, otp, expires_at) VALUES ($1, $2, $3)
+       ON CONFLICT (username) DO UPDATE SET otp = EXCLUDED.otp, expires_at = EXCLUDED.expires_at`,
+      [username, otp, expiresAt]
+    );
+
+    if (client) {
+      // TODO: CHANGE THIS NUMBER LATER TO THE ACTUAL COMPANY NUMBER
+      // Note: number change for otp
+      const targetNumber = '+919340284497'; 
+      const sourceNumber = process.env.PLIVO_NUMBER || targetNumber; // Fallback to target if sender not set
+
+      await client.messages.create(
+        sourceNumber, // src
+        targetNumber, // dst
+        `Your Edwin Calling Solution Admin Verification Code is: ${otp}. Valid for 10 minutes.` // text
+      );
+      console.log(`✉️ OTP ${otp} sent via Plivo to ${targetNumber} for user ${username}`);
+    } else {
+      console.warn(`⚠️ Plivo client not configured. Simulated OTP for ${username} is ${otp}`);
+    }
+
+    res.json({ success: true, message: 'OTP sent successfully' });
+  } catch (err) {
+    console.error('❌ Error sending OTP:', err);
+    res.status(500).json({ error: 'Failed to send OTP' });
+  }
+});
+
 app.get('/agents', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -117,16 +168,47 @@ app.post('/login', async (req, res) => {
 });
 
 app.post('/agents', async (req, res) => {
-  const { name, username, password, number } = req.body;
+  const { name, username, password, number, role, otp } = req.body;
+  
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'All fields are required' });
   }
+
+  // Admin registration requires OTP verification
+  if (role === 'admin') {
+    if (!otp) {
+      return res.status(400).json({ error: 'OTP is required for Admin registration' });
+    }
+
+    try {
+      const { rows } = await pool.query('SELECT otp, expires_at FROM otps WHERE username = $1', [username]);
+      if (rows.length === 0) {
+        return res.status(400).json({ error: 'OTP not requested or expired' });
+      }
+
+      const storedOtpInfo = rows[0];
+      if (new Date() > new Date(storedOtpInfo.expires_at)) {
+        await pool.query('DELETE FROM otps WHERE username = $1', [username]);
+        return res.status(400).json({ error: 'OTP has expired' });
+      }
+
+      if (storedOtpInfo.otp !== otp) {
+        return res.status(400).json({ error: 'Invalid OTP' });
+      }
+
+      // OTP is valid, clean it up
+      await pool.query('DELETE FROM otps WHERE username = $1', [username]);
+    } catch (err) {
+      return res.status(500).json({ error: 'Error verifying OTP' });
+    }
+  }
+
   try {
     const { rows } = await pool.query(
       'INSERT INTO agents (name, username, password, number, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [name, username, password, number || '', 'agent']
+      [name, username, password, number || '', role || 'agent']
     );
-    console.log(`👤 New agent created: ${username}`);
+    console.log(`👤 New agent created: ${username} (${role || 'agent'})`);
     res.json(rows[0]);
   } catch (err) {
     if (err.code === '23505') {
@@ -174,14 +256,12 @@ app.delete('/agents/:username', async (req, res) => {
 app.get('/token', async (req, res) => {
   const requestedUsername = req.query.username;
   try {
-    // Ab SELECT mein 'number' column bhi la rahe hain
     const { rows } = await pool.query(
       'SELECT username, password, number FROM agents WHERE username=$1',
       [requestedUsername]
     );
     let agent = rows[0];
     if (!agent) {
-      // Fallback: koi bhi agent (role='agent')
       const { rows: fallback } = await pool.query(
         'SELECT username, password, number FROM agents WHERE role=$1 LIMIT 1',
         ['agent']
@@ -190,8 +270,7 @@ app.get('/token', async (req, res) => {
       if (!agent) return res.json({ username: '', password: '' });
     }
     
-    // Extract real SIP username from 'number' column (which stores sip:long@phone.plivo.com)
-    let sipUsername = agent.username;  // fallback agar number column me kuch na ho
+    let sipUsername = agent.username;
     if (agent.number && agent.number.includes('sip:')) {
       const match = agent.number.match(/sip:(.+?)@/);
       if (match && match[1]) sipUsername = match[1];
@@ -207,7 +286,46 @@ app.get('/token', async (req, res) => {
 
 // ── ANSWER ────────────────────────────────────────────────────────────────────
 app.post('/answer', async (req, res) => {
-  console.log('📞 Answer:', JSON.stringify(req.body));
+  console.log('📞 Answer Webhook:', JSON.stringify(req.body));
+  
+  const event = req.body.Event || req.body.event || '';
+  const callStatus = req.body.CallStatus || req.body.call_status || '';
+  const callId = req.body.CallUUID || req.body.call_uuid;
+
+  // If this is a Hangup or the call is completed, save the duration and status
+  if (event.toLowerCase() === 'hangup' || callStatus.toLowerCase() === 'completed') {
+    let duration = req.body.Duration || req.body.duration || req.body.BillDuration || 0;
+    const to = req.body.To || req.body.to || '';
+    const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
+    
+    let agentName = req.body['X-PH-AgentName'] || req.body.CallerName || 'Unknown Agent';
+    if (agentName === 'Unknown Agent' && req.body.From) {
+      try {
+        const { rows } = await pool.query("SELECT name FROM agents WHERE $1 LIKE '%' || username || '%'", [req.body.From]);
+        if (rows.length > 0) agentName = rows[0].name;
+      } catch (e) {}
+    }
+
+    if (callId) {
+      try {
+        await pool.query(
+          `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
+           VALUES ($1, $2, $3, $4, '', $5, $6, NOW()) 
+           ON CONFLICT (id) DO UPDATE SET 
+             duration = EXCLUDED.duration, 
+             status = EXCLUDED.status,
+             reason = EXCLUDED.reason`,
+          [callId, agentName, to, parseInt(duration), callStatus || 'completed', hangupCause]
+        );
+        console.log(`✅ Hangup processed for Call: ${callId} | Duration: ${duration}s | Cause: ${hangupCause}`);
+      } catch (err) {
+        console.error('❌ Error saving hangup data:', err.message);
+      }
+    }
+    return res.status(200).send('OK');
+  }
+
+  // Initial Answer Request: return Dial XML
   let to = req.body.To || req.body.to;
   let agentName = req.body['X-PH-AgentName'];
 
@@ -221,6 +339,12 @@ app.post('/answer', async (req, res) => {
     } catch (e) {}
   }
   if (!agentName) agentName = 'Agent';
+
+  // Determine base URL for callbacks
+  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  let host = req.headers['host'] || req.get('host');
+  let baseUrl = process.env.RENDER_URL || `${protocol}://${host}`;
+  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
   let isSip = false;
   if (to) {
@@ -239,60 +363,93 @@ app.post('/answer', async (req, res) => {
   }
 
   const dialElement = isSip ? `<User>${to}</User>` : `<Number>${to}</Number>`;
+  const recordingCallback = `${baseUrl}/recording?agent=${encodeURIComponent(agentName)}`;
+  const actionUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`;
+  
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${process.env.PLIVO_NUMBER}" record="true" recordingCallbackUrl="${process.env.RENDER_URL}/recording?agent=${encodeURIComponent(agentName)}" recordingCallbackMethod="POST">
+  <Dial callerId="${process.env.PLIVO_NUMBER}" action="${actionUrl}" answerOnBridge="true" record="true" recordingCallbackUrl="${recordingCallback}" recordingCallbackMethod="POST" hangupOnStar="false" timeLimit="14400">
     ${dialElement}
   </Dial>
 </Response>`;
 
+  console.log(`📡 Sending XML with action: ${actionUrl} and recordingCallback: ${recordingCallback}`);
   res.set('Content-Type', 'text/xml').send(xml);
 });
 
 // ── RECORDING ─────────────────────────────────────────────────────────────────
 app.post('/recording', async (req, res) => {
-  console.log('⏺️ Recording:', JSON.stringify(req.body));
+  console.log('⏺️ Recording Callback Received:', JSON.stringify(req.body));
 
   let agentName = req.query.agent;
-  if (!agentName || agentName === 'Agent') {
+  const callId = req.body.CallUUID || req.body.call_uuid;
+  const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
+  
+  if (!agentName || agentName === 'Agent' || agentName === 'Unknown Agent') {
+    // Try to find agent by From number or CallUUID in database
     try {
       const { rows } = await pool.query(
-        'SELECT name FROM agents WHERE username=$1', [req.body.CallerName]
+        'SELECT agent FROM calls WHERE id=$1', [callId]
       );
-      if (rows.length > 0) agentName = rows[0].name;
+      if (rows.length > 0) agentName = rows[0].agent;
+      else if (req.body.From) {
+        const { rows: agentRows } = await pool.query(
+          "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%'", [req.body.From]
+        );
+        if (agentRows.length > 0) agentName = agentRows[0].name;
+      }
     } catch (e) {}
   }
   if (!agentName) agentName = 'Unknown Agent';
 
-  // Map duration correctly: prefer Duration if RecordingDuration is invalid
-  let duration = req.body.RecordingDuration;
-  if (duration === '-1' || duration === -1 || !duration) {
-    duration = req.body.Duration || 0;
-  }
+  let duration = req.body.RecordingDuration || req.body.duration || 0;
+  if (duration === '-1' || duration === -1) duration = 0;
 
-  const callId = req.body.CallUUID || req.body.call_uuid || 'call_' + Date.now();
+  const status = req.body.CallStatus || req.body.call_status || 'completed';
   
-  // Sanitize recording URL: Ensure it's a direct media URL and ends with .mp3
   let recordingUrl = req.body.RecordingUrl || req.body.RecordUrl || req.body.record_url || '';
   if (recordingUrl) {
-    // If it's an API URL, convert to media URL (simple replacement usually works for Plivo)
     recordingUrl = recordingUrl.replace('api.plivo.com', 'media.plivo.com');
-    // Ensure it has .mp3 extension
-    if (!recordingUrl.endsWith('.mp3')) {
-      recordingUrl = recordingUrl + '.mp3';
+    if (!recordingUrl.endsWith('.mp3') && !recordingUrl.includes('.mp3?')) {
+      // Some URLs might have query params, but usually Plivo URLs end with UUID or .mp3
+      if (!recordingUrl.includes('?')) recordingUrl = recordingUrl + '.mp3';
     }
   }
 
+  if (callId) {
+    try {
+      await pool.query(
+        `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) 
+         ON CONFLICT (id) DO UPDATE SET 
+           duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END, 
+           recording_url = EXCLUDED.recording_url, 
+           status = EXCLUDED.status,
+           reason = CASE WHEN EXCLUDED.reason <> '' THEN EXCLUDED.reason ELSE calls.reason END`,
+        [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, status, hangupCause]
+      );
+      console.log(`📝 Call recording saved: ${callId} | URL: ${recordingUrl} | Duration: ${duration}s | Cause: ${hangupCause}`);
+    } catch (err) {
+      console.error('❌ Save recording error:', err.message);
+    }
+  }
+  res.sendStatus(200);
+});
+
+// ── LOG CALL ──────────────────────────────────────────────────────────────────
+app.post('/log-call', async (req, res) => {
+  const { to, agent, status, duration } = req.body;
+  const callId = 'local_' + Date.now();
+  
   try {
     await pool.query(
       'INSERT INTO calls (id, agent, "to", duration, recording_url, status, time) VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT (id) DO NOTHING',
-      [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, 'completed']
+      [callId, agent || 'Unknown Agent', to || '', parseInt(duration) || 0, '', status || 'completed']
     );
-    console.log(`📝 Call saved: ${callId} | URL: ${recordingUrl}`);
+    res.json({ success: true, id: callId });
   } catch (err) {
-    console.error('❌ Save call error:', err.message);
+    res.status(500).json({ error: err.message });
   }
-  res.sendStatus(200);
 });
 
 // ── CALLS ─────────────────────────────────────────────────────────────────────
@@ -304,7 +461,7 @@ app.get('/calls', async (req, res) => {
       return res.json(rows.map(r => ({
         id: r.id, agent: r.agent, to: r.to,
         duration: r.duration, recordingUrl: r.recording_url,
-        time: r.time, status: r.status
+        time: r.time, status: r.status, reason: r.reason
       })));
     }
     const { rows: agentRows } = await pool.query(
@@ -317,7 +474,7 @@ app.get('/calls', async (req, res) => {
     res.json(rows.map(r => ({
       id: r.id, agent: r.agent, to: r.to,
       duration: r.duration, recordingUrl: r.recording_url,
-      time: r.time, status: r.status
+      time: r.time, status: r.status, reason: r.reason
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
