@@ -380,8 +380,7 @@ app.post('/answer', async (req, res) => {
       // If dialStatus is present, it means the dialed leg to the customer has ended.                                          
       // We must return Hangup immediately to stop Plivo from looping and redialing.                                           
       if (dialStatus) {                                                                                                        
-        console.log('🛑 Dial leg ended. DialStatus:', dialStatus, 'HangupCause:', hangupCause, '- Hanging up call to prevent   
-  redial.');                                                                                                                   
+        console.log('🛑 Dial leg ended. DialStatus:', dialStatus, 'HangupCause:', hangupCause, '- Hanging up call to prevent redial.');                                                                                                                   
         res.set('Content-Type', 'text/xml');                                                                                   
         return res.send('<Response><Hangup/></Response>');                                                                     
       }                                                                                                                        
