@@ -819,20 +819,21 @@
     function applyFilters() { const num = document.getElementById('filterNumber').value.toLowerCase(); const agent = document.getElementById('filterAgent').value; const date = document.getElementById('filterDate').value; const filtered = allCalls.filter(c => { const matchesNum = c.to.toLowerCase().includes(num); const matchesAgent = !agent || c.agent === agent; const matchesDate = !date || new Date(c.time).toLocaleDateString() === new Date(date).toLocaleDateString(); return matchesNum && matchesAgent && matchesDate; }); renderHistory(filtered); }
 
     function renderHistory(calls) {
+        const formatDuration = (sec) => {
+            if (!sec || sec == 0) return '0s';
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return m > 0 ? `${m}m ${s}s` : `${s}s`;
+        };
+
         const renderRow = (call) => {
-            let durationDisplay = call.duration;
-            if (durationDisplay === "-1" || durationDisplay === -1) durationDisplay = "0";
-            else if (isNaN(parseInt(durationDisplay))) durationDisplay = "0";
-            else durationDisplay = parseInt(durationDisplay);
+            const durationDisplay = formatDuration(call.duration);
             
             const recordingControl = call.recordingUrl ? `
                 <div class="flex items-center justify-end gap-2">
-                    <button onclick="playRecording('${call.recordingUrl}', this)" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-all border border-emerald-100 group/play">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                        <span>Listen</span>
-                    </button>
+                    <audio controls src="${call.recordingUrl}" class="h-8 w-44 sm:w-48" style="height: 32px; width: 180px;"></audio>
                     <a href="${call.recordingUrl}" target="_blank" class="p-1.5 text-slate-400 hover:text-blue-500 transition-colors" title="Download/Open Original">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14\"/></svg>
                     </a>
                 </div>
             ` : '<span class="text-xs text-slate-300 italic">No recording</span>';
@@ -845,7 +846,7 @@
                 <td class="p-5 text-sm text-slate-600">${new Date(call.time).toLocaleString()}</td>
                 <td class="p-5 text-sm font-bold text-slate-800">${call.agent || 'Agent'}</td>
                 <td class="p-5 text-sm font-bold text-blue-600">${call.to}</td>
-                <td class="p-5 text-sm text-slate-500">${durationDisplay}s</td>
+                <td class="p-5 text-sm text-slate-500">${durationDisplay}</td>
                 <td class="p-5 text-right">
                     <div class="flex flex-col items-end gap-1">
                         ${recordingControl}
@@ -854,59 +855,7 @@
                 </td>
             </tr>`;
         };
-        document.getElementById('fullHistoryBody').innerHTML = calls.length ? calls.slice().reverse().map(renderRow).join('') : '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
-    }
-
-    let retryCount = 0;
-    const MAX_RETRIES = 3;
-
-    function playRecording(url, btn) {
-        let audio = document.getElementById('globalRecordingPlayer');
-        if (!audio) {
-            audio = document.createElement('audio');
-            audio.id = 'globalRecordingPlayer';
-            audio.style.display = 'none';
-            document.body.appendChild(audio);
-        }
-        
-        const originalContent = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><span>Listen</span>';
-        const stopContent = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg><span>Stop</span>';
-        const processingContent = '<span class="animate-pulse">Processing...</span>';
-
-        if (audio.src === url && !audio.paused) {
-            audio.pause();
-            btn.innerHTML = originalContent;
-            retryCount = 0;
-        } else {
-            // Reset all other buttons
-            document.querySelectorAll('button[onclick^="playRecording"]').forEach(b => {
-                b.innerHTML = originalContent;
-            });
-            
-            audio.src = url;
-            btn.innerHTML = processingContent;
-
-            audio.play().then(() => {
-                btn.innerHTML = stopContent;
-                retryCount = 0;
-            }).catch(e => {
-                console.warn('Playback attempt failed', e);
-                if (retryCount < MAX_RETRIES) {
-                    retryCount++;
-                    showToast(`Recording is being processed (${retryCount}/${MAX_RETRIES}). Retrying...`, 'info');
-                    setTimeout(() => playRecording(url, btn), 3000);
-                } else {
-                    btn.innerHTML = originalContent;
-                    showToast('Recording not ready yet. Plivo is still processing the file. Please try again in 10 seconds.', 'error');
-                    retryCount = 0;
-                }
-            });
-
-            audio.onended = () => {
-                btn.innerHTML = originalContent;
-                retryCount = 0;
-            };
-        }
+        document.getElementById('fullHistoryBody').innerHTML = calls.length ? calls.map(renderRow).join('') : '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
     }
 
     async function fetchHistory() {
@@ -925,13 +874,17 @@
             if (displayCalls.length === 0) {
                 recentBody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-400 italic">No calls made yet.</td></tr>';
             } else {
-                const lastFive = displayCalls.slice(-5).reverse();
+                const formatDurationShort = (sec) => {
+                    if (!sec || sec == 0) return '0s';
+                    const m = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+                };
+
+                const lastFive = displayCalls.slice(0, 5); // displayCalls is already reversed or needs slicing from start for most recent
                 recentBody.innerHTML = lastFive.map(call => {
-                    let durationDisplay = call.duration;
-                    if (durationDisplay === "-1" || durationDisplay === -1) durationDisplay = "0";
-                    else if (isNaN(parseInt(durationDisplay))) durationDisplay = "0";
-                    else durationDisplay = parseInt(durationDisplay);
-                    return `<tr class="hover:bg-slate-50 transition-colors"><td class="p-4 text-sm text-slate-500">${new Date(call.time).toLocaleTimeString()}</td><td class="p-4 text-sm font-bold text-slate-800">${call.to}</td><td class="p-4 text-sm text-slate-500">${durationDisplay}s</td><td class="p-4 text-right"><span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold uppercase">${call.status}</span></td></tr>`;
+                    const durationDisplay = formatDurationShort(call.duration);
+                    return `<tr class="hover:bg-slate-50 transition-colors"><td class="p-4 text-sm text-slate-500">${new Date(call.time).toLocaleTimeString()}</td><td class="p-4 text-sm font-bold text-slate-800">${call.to}</td><td class="p-4 text-sm text-slate-500">${durationDisplay}</td><td class="p-4 text-right"><span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold uppercase">${call.status}</span></td></tr>`;
                 }).join('');
             }
             renderHistory(displayCalls);
