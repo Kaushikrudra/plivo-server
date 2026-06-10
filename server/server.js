@@ -297,18 +297,21 @@ app.post('/answer', async (req, res) => {
   const hangupCause = req.body.HangupCause;
   const event = req.body.Event || req.body.event || '';
 
-  if (
-    callStatus === 'cancel' ||
-    callStatus === 'completed' ||
-    dialStatus === 'busy' ||
-    dialStatus === 'cancel' ||
-    hangupCause === 'ORIGINATOR_CANCEL' ||
-    hangupCause === 'USER_BUSY' ||
-    (event === 'Redirect' && (dialStatus === 'busy' || dialStatus === 'cancel'))
-  ) {
-    console.log('🛑 Stopping redial. Status:', callStatus, dialStatus, hangupCause);
-    res.set('Content-Type', 'text/xml');
-    return res.send('<Response><Hangup/></Response>');
+  // IMPORTANT: Never block Hangup or StartApp events - they need to save data
+  if (event !== 'Hangup' && event !== 'StartApp') {
+    if (
+      callStatus === 'cancel' ||
+      callStatus === 'completed' ||
+      dialStatus === 'busy' ||
+      dialStatus === 'cancel' ||
+      hangupCause === 'ORIGINATOR_CANCEL' ||
+      hangupCause === 'USER_BUSY' ||
+      (event === 'Redirect' && (dialStatus === 'busy' || dialStatus === 'cancel'))
+    ) {
+      console.log('🛑 Stopping redial. Event:', event, 'Status:', callStatus, dialStatus);
+      res.set('Content-Type', 'text/xml');
+      return res.send('<Response><Hangup/></Response>');
+    }
   }
   
   const callId = req.body.CallUUID || req.body.call_uuid;
