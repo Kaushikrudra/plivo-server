@@ -289,48 +289,59 @@ app.get('/token', async (req, res) => {
   }
 });
 
-// ── HELPER: RESOLVE AGENT NAME FROM SIP OR USERNAME ───────────────────────────
-async function resolveAgentName(inputAgent, callId) {
-  if (!inputAgent) return 'Agent';
-  
-  // Extract username from SIP URI if present
-  let cleanSipUser = inputAgent.trim();
-  if (cleanSipUser.startsWith('sip:')) {
-    const match = cleanSipUser.match(/sip:(.+?)@/);
-    if (match && match[1]) cleanSipUser = match[1];
-    else cleanSipUser = cleanSipUser.replace('sip:', '');
-  }
-  if (cleanSipUser.includes('@')) {
-    cleanSipUser = cleanSipUser.split('@')[0];
-  }
-
-  try {
-    // 1. Search by name, username, or number
-    const { rows } = await pool.query(
-      `SELECT name FROM agents 
-       WHERE LOWER(name) = LOWER($1)
-          OR LOWER(username) = LOWER($2) 
-          OR number = $3 
-          OR (number <> '' AND number LIKE '%' || $3 || '%')`,
-      [inputAgent.trim(), cleanSipUser, inputAgent.trim()]
-    );
-    if (rows.length > 0) {
-      return rows[0].name;
-    }
-    
-    // 2. Check by callId fallback
-    if (callId) {
-      const { rows: callRows } = await pool.query('SELECT agent FROM calls WHERE id=$1', [callId]);
-      if (callRows.length > 0 && callRows[0].agent && callRows[0].agent !== 'Unknown Agent') {
-        return callRows[0].agent;
+  // ── HELPER: RESOLVE AGENT NAME FROM SIP OR USERNAME ───────────────────────────                                          
+    async function resolveAgentName(inputAgent, callId) {                                                                      
+      if (!inputAgent) return 'Agent';                                                                                         
+                                                                                                                               
+      // Extract username from SIP URI if present                                                                              
+      let cleanSipUser = inputAgent.trim();                                                                                    
+      if (cleanSipUser.startsWith('sip:')) {                                                                                   
+        const match = cleanSipUser.match(/sip:(.+?)@/);                                                                        
+        if (match && match[1]) cleanSipUser = match[1];                                                                        
+        else cleanSipUser = cleanSipUser.replace('sip:', '');                                                                  
+      }                                                                                                                        
+      if (cleanSipUser.includes('@')) {                                                                                        
+        cleanSipUser = cleanSipUser.split('@')[0];                                                                             
+      }                                                                                                                        
+                                                                                                                               
+      try {                                                                                                                    
+        // 1. Try to match by name or username first (high priority)                                                           
+        const { rows: nameOrUserRows } = await pool.query(                                                                     
+          `SELECT name FROM agents                                                                                             
+           WHERE LOWER(name) = LOWER($1)                                                                                       
+              OR LOWER(username) = LOWER($2)`,                                                                                 
+          [inputAgent.trim(), cleanSipUser]                                                                                    
+        );                                                                                                                     
+        if (nameOrUserRows.length > 0) {                                                                                       
+          return nameOrUserRows[0].name;                                                                                       
+        }                                                                                                                      
+                                                                                                                               
+        // 2. Try to match by number (low priority fallback)                                                                   
+        const { rows: numberRows } = await pool.query(                                                                         
+          `SELECT name FROM agents                                                                                             
+           WHERE number = $1                                                                                                   
+              OR (number <> '' AND number LIKE '%' || $1 || '%')`,                                                             
+          [inputAgent.trim()]                                                                                                  
+        );                                                                                                                     
+        if (numberRows.length > 0) {                                                                                           
+          return numberRows[0].name;                                                                                           
+        }                                                                                                                      
+                                                                                                                               
+        // 3. Check by callId fallback                                                                                         
+        if (callId) {                                                                                                          
+          const { rows: callRows } = await pool.query('SELECT agent FROM calls WHERE id=$1', [callId]);                        
+          if (callRows.length > 0 && callRows[0].agent && callRows[0].agent !== 'Unknown Agent') {                             
+            return callRows[0].agent;                                                                                          
+          }
+        }
+      } catch (e) {
+        console.error('Agent lookup error:', e.message);
       }
+      
+      return inputAgent;
     }
-  } catch (e) {
-    console.error('Agent lookup error:', e.message);
-  }
   
-  return inputAgent;
-}
+    
 
 // ── ANSWER ────────────────────────────────────────────────────────────────────
 app.post('/answer', async (req, res) => {
