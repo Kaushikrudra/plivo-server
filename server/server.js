@@ -310,7 +310,7 @@ app.post('/answer', async (req, res) => {
     const sipUser = req.body.CallerName || req.body.From || agentName;
     try {
       const { rows } = await pool.query(
-        "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%' OR username = $1",
+        "SELECT name FROM agents WHERE number = $1 OR number LIKE '%' || $1 || '%'",
         [sipUser]
       );
       if (rows.length > 0) {
@@ -346,7 +346,11 @@ app.post('/answer', async (req, res) => {
   // --- HANGUP / SAVE LOGIC ---
   if (event.toLowerCase() === 'hangup' || event.toLowerCase() === 'dialhangup' || callStatus.toLowerCase() === 'completed') {
     let duration = req.body.Duration || req.body.duration || req.body.BillDuration || req.body.DialBillDuration || 0;
-    const to = req.body.To || req.body.to || '';
+    const rawTo = req.body.To 
+      || req.body.to 
+      || req.body['SIP-H-To']?.replace(/<|>/g, '').split(':')[1]?.split('@')[0]
+      || '';
+    const to = rawTo.replace(/\D/g, '').slice(-10); // keep last 10 digits
 
     if (callId) {
       try {
@@ -389,6 +393,8 @@ app.post('/answer', async (req, res) => {
   let baseUrl = process.env.RENDER_URL || `${protocol}://${host}`;
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
+  console.log('🌐 Base URL being used:', baseUrl);
+
   let isSip = false;
   if (to) {
     if (to.startsWith('sip:') || to.includes('@') || to.startsWith('zohoagent') || to.startsWith('edwinagent')) {
@@ -410,6 +416,8 @@ app.post('/answer', async (req, res) => {
   const actionUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`;
   const callbackUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`; // For status changes
   
+  console.log('🎙️ Recording callback URL:', recordingCallback);
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial callerId="${process.env.PLIVO_NUMBER}" 
@@ -426,8 +434,12 @@ app.post('/answer', async (req, res) => {
   </Dial>
 </Response>`;
 
-  console.log(`📡 Sending XML for Agent: ${agentName} | action: ${actionUrl} | recordingCallback: ${recordingCallback}`);
+  console.log(`📡 Sending XML for Agent: ${agentName} | action: ${actionUrl}`);
   res.set('Content-Type', 'text/xml').send(xml);
+});
+
+app.get('/recording', (req, res) => {
+  res.json({ status: 'Recording endpoint is active' });
 });
 
 // ── RECORDING ─────────────────────────────────────────────────────────────────
@@ -449,7 +461,7 @@ app.post('/recording', async (req, res) => {
         agentName = rows[0].agent;
       } else if (req.body.From) {
         const { rows: agentRows } = await pool.query(
-          "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%' OR username = $1", [req.body.From]
+          "SELECT name FROM agents WHERE number = $1 OR number LIKE '%' || $1 || '%'", [req.body.From]
         );
         if (agentRows.length > 0) agentName = agentRows[0].name;
       }
