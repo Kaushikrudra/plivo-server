@@ -25,6 +25,7 @@ const pool = new Pool({
 async function initDB() {
   try {
     await pool.query(`
+      
       CREATE TABLE IF NOT EXISTS agents (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -288,6 +289,49 @@ app.get('/token', async (req, res) => {
   }
 });
 
+// ── HELPER: RESOLVE AGENT NAME FROM SIP OR USERNAME ───────────────────────────
+async function resolveAgentName(inputAgent, callId) {
+  if (!inputAgent) return 'Agent';
+  
+  // Extract username from SIP URI if present
+  let cleanSipUser = inputAgent.trim();
+  if (cleanSipUser.startsWith('sip:')) {
+    const match = cleanSipUser.match(/sip:(.+?)@/);
+    if (match && match[1]) cleanSipUser = match[1];
+    else cleanSipUser = cleanSipUser.replace('sip:', '');
+  }
+  if (cleanSipUser.includes('@')) {
+    cleanSipUser = cleanSipUser.split('@')[0];
+  }
+
+  try {
+    // 1. Search by name, username, or number
+    const { rows } = await pool.query(
+      `SELECT name FROM agents 
+       WHERE LOWER(name) = LOWER($1)
+          OR LOWER(username) = LOWER($2) 
+          OR number = $3 
+          OR (number <> '' AND number LIKE '%' || $3 || '%')`,
+      [inputAgent.trim(), cleanSipUser, inputAgent.trim()]
+    );
+    if (rows.length > 0) {
+      return rows[0].name;
+    }
+    
+    // 2. Check by callId fallback
+    if (callId) {
+      const { rows: callRows } = await pool.query('SELECT agent FROM calls WHERE id=$1', [callId]);
+      if (callRows.length > 0 && callRows[0].agent && callRows[0].agent !== 'Unknown Agent') {
+        return callRows[0].agent;
+      }
+    }
+  } catch (e) {
+    console.error('Agent lookup error:', e.message);
+  }
+  
+  return inputAgent;
+}
+
 // ── ANSWER ────────────────────────────────────────────────────────────────────
 app.post('/answer', async (req, res) => {
   console.log('📞 Answer Webhook Received:', JSON.stringify(req.body));
@@ -298,33 +342,27 @@ app.post('/answer', async (req, res) => {
   const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
   const callId = req.body.CallUUID || req.body.call_uuid || req.body.DialALegUUID;
 
-  // --- FIX: ENHANCED AGENT NAME RESOLUTION ---
-  let agentName = req.query.agent 
-    || req.body.agent 
-    || req.body['X-PH-AgentName'] 
-    || req.body.CallerName 
-    || '';
-
-  // If agentName is missing or generic, try to find it
-  if (!agentName || agentName === 'Agent' || agentName === 'Unknown Agent' || agentName.startsWith('zohoagent')) {
-    const sipUser = req.body.CallerName || req.body.From || agentName;
-    try {
-      const { rows } = await pool.query(
-        "SELECT name FROM agents WHERE number = $1 OR number LIKE '%' || $1 || '%'",
-        [sipUser]
-      );
-      if (rows.length > 0) {
-        agentName = rows[0].name;
-      } else if (callId) {
-        // Fallback: Check existing call record in DB
-        const { rows: callRows } = await pool.query('SELECT agent FROM calls WHERE id=$1', [callId]);
-        if (callRows.length > 0 && callRows[0].agent !== 'Unknown Agent') {
-          agentName = callRows[0].agent;
+  // --- FIX: ENHANCED AGENT NAME RESOLUTION (CASE-INSENSITIVE + KEY SEARCH) ---
+  let inputAgent = req.query.agent || req.body.agent || '';
+  if (!inputAgent) {
+    const findKey = (obj) => {
+      if (!obj) return null;
+      for (const key of Object.keys(obj)) {
+        const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normalized.includes('agentname')) {
+          return obj[key];
         }
       }
-    } catch (e) { console.error('Agent lookup error:', e.message); }
+      return null;
+    };
+    inputAgent = findKey(req.query) || findKey(req.body) || findKey(req.headers) || '';
   }
-  if (!agentName) agentName = 'Agent';
+  if (!inputAgent) {
+    inputAgent = req.body.CallerName || req.body.From || '';
+  }
+
+  const agentName = await resolveAgentName(inputAgent, callId);
+  console.log(`👤 Resolved Agent Name: ${agentName} (from input: ${inputAgent})`);
 
   // --- REDIAL LOOP PREVENTION ---
   if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp' && event.toLowerCase() !== 'dialhangup') {
@@ -387,10 +425,12 @@ app.post('/answer', async (req, res) => {
   // Initial Answer Request: return Dial XML
   let to = req.body.To || req.body.to;
 
-  // Determine base URL for callbacks
+  // Determine base URL for callbacks dynamically from request headers.
+  // This automatically adapts to whatever domain (e.g. plivo-server-c3tp.onrender.com)
+  // or local ngrok tunnel is being used to contact the server.
   let protocol = req.headers['x-forwarded-proto'] || req.protocol;
   let host = req.headers['host'] || req.get('host');
-  let baseUrl = process.env.RENDER_URL || `${protocol}://${host}`;
+  let baseUrl = `${protocol}://${host}`;
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
   console.log('🌐 Base URL being used:', baseUrl);
@@ -420,14 +460,15 @@ app.post('/answer', async (req, res) => {
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  <Record action="${recordingCallback}" 
+          startOnDialAnswer="true" 
+          redirect="false" 
+          maxLength="14400" />
   <Dial callerId="${process.env.PLIVO_NUMBER}" 
         action="${actionUrl}" 
         callbackUrl="${callbackUrl}"
         callbackMethod="POST"
         answerOnBridge="true" 
-        record="true" 
-        recordingCallbackUrl="${recordingCallback}" 
-        recordingCallbackMethod="POST" 
         hangupOnStar="false" 
         timeLimit="14400">
     ${dialElement}
@@ -447,27 +488,29 @@ app.post('/recording', async (req, res) => {
   console.log('🎙️ Recording webhook hit!', req.body.CallUUID, req.body.RecordingUrl);
   console.log('⏺️ Recording Callback Full Data:', JSON.stringify(req.body));
 
-  let agentName = req.query.agent;
   const callId = req.body.CallUUID || req.body.call_uuid;
   const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
   
-  if (!agentName || agentName === 'Agent' || agentName === 'Unknown Agent' || agentName.startsWith('zohoagent')) {
-    // Try to find agent by From number or CallUUID in database
-    try {
-      const { rows } = await pool.query(
-        'SELECT agent FROM calls WHERE id=$1', [callId]
-      );
-      if (rows.length > 0 && rows[0].agent !== 'Unknown Agent' && !rows[0].agent.startsWith('zohoagent')) {
-        agentName = rows[0].agent;
-      } else if (req.body.From) {
-        const { rows: agentRows } = await pool.query(
-          "SELECT name FROM agents WHERE number = $1 OR number LIKE '%' || $1 || '%'", [req.body.From]
-        );
-        if (agentRows.length > 0) agentName = agentRows[0].name;
+  let inputAgent = req.query.agent || '';
+  if (!inputAgent) {
+    const findKey = (obj) => {
+      if (!obj) return null;
+      for (const key of Object.keys(obj)) {
+        const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normalized.includes('agentname')) {
+          return obj[key];
+        }
       }
-    } catch (e) {}
+      return null;
+    };
+    inputAgent = findKey(req.query) || findKey(req.body) || findKey(req.headers) || '';
   }
-  if (!agentName) agentName = 'Unknown Agent';
+  if (!inputAgent) {
+    inputAgent = req.body.From || req.body.CallerName || '';
+  }
+
+  const agentName = await resolveAgentName(inputAgent, callId);
+  console.log(`👤 Resolved Recording Agent Name: ${agentName} (from input: ${inputAgent})`);
 
   let duration = req.body.RecordingDuration || req.body.duration || 0;
   if (duration === '-1' || duration === -1) duration = 0;
