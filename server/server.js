@@ -290,15 +290,44 @@ app.get('/token', async (req, res) => {
 
 // ── ANSWER ────────────────────────────────────────────────────────────────────
 app.post('/answer', async (req, res) => {
-  console.log('📞 Answer Webhook:', JSON.stringify(req.body));
+  console.log('📞 Answer Webhook Received:', JSON.stringify(req.body));
   
+  const event = req.body.Event || req.body.event || '';
   const callStatus = req.body.CallStatus || req.body.call_status || '';
   const dialStatus = req.body.DialStatus || req.body.dial_status || '';
   const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
-  const event = req.body.Event || req.body.event || '';
+  const callId = req.body.CallUUID || req.body.call_uuid || req.body.DialALegUUID;
 
-  // IMPORTANT: Never block Hangup or StartApp events - they need to save data
-  if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp') {
+  // --- FIX: ENHANCED AGENT NAME RESOLUTION ---
+  let agentName = req.query.agent 
+    || req.body.agent 
+    || req.body['X-PH-AgentName'] 
+    || req.body.CallerName 
+    || '';
+
+  // If agentName is missing or generic, try to find it
+  if (!agentName || agentName === 'Agent' || agentName === 'Unknown Agent' || agentName.startsWith('zohoagent')) {
+    const sipUser = req.body.CallerName || req.body.From || agentName;
+    try {
+      const { rows } = await pool.query(
+        "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%' OR username = $1",
+        [sipUser]
+      );
+      if (rows.length > 0) {
+        agentName = rows[0].name;
+      } else if (callId) {
+        // Fallback: Check existing call record in DB
+        const { rows: callRows } = await pool.query('SELECT agent FROM calls WHERE id=$1', [callId]);
+        if (callRows.length > 0 && callRows[0].agent !== 'Unknown Agent') {
+          agentName = callRows[0].agent;
+        }
+      }
+    } catch (e) { console.error('Agent lookup error:', e.message); }
+  }
+  if (!agentName) agentName = 'Agent';
+
+  // --- REDIAL LOOP PREVENTION ---
+  if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp' && event.toLowerCase() !== 'dialhangup') {
     if (
       callStatus.toLowerCase() === 'cancel' ||
       callStatus.toLowerCase() === 'completed' ||
@@ -313,64 +342,39 @@ app.post('/answer', async (req, res) => {
       return res.send('<Response><Hangup/></Response>');
     }
   }
-  
-  const callId = req.body.CallUUID || req.body.call_uuid;
 
-  // If this is a Hangup or the call is completed, save the duration and status
-  if (event.toLowerCase() === 'hangup' || callStatus.toLowerCase() === 'completed') {
-    let duration = req.body.Duration || req.body.duration || req.body.BillDuration || 0;
+  // --- HANGUP / SAVE LOGIC ---
+  if (event.toLowerCase() === 'hangup' || event.toLowerCase() === 'dialhangup' || callStatus.toLowerCase() === 'completed') {
+    let duration = req.body.Duration || req.body.duration || req.body.BillDuration || req.body.DialBillDuration || 0;
     const to = req.body.To || req.body.to || '';
-    
-    let agentName = req.body['X-PH-AgentName'] || req.body.CallerName || 'Unknown Agent';
-    if (agentName === 'Unknown Agent' && req.body.From) {
-      try {
-        const { rows } = await pool.query("SELECT name FROM agents WHERE $1 LIKE '%' || username || '%'", [req.body.From]);
-        if (rows.length > 0) agentName = rows[0].name;
-      } catch (e) {}
-    }
 
     if (callId) {
       try {
         const mapStatus = (status, cause) => {
           const s = (status || '').toLowerCase();
-          if (s === 'completed' || s === 'answered') return 'completed';
+          if (s === 'completed' || s === 'answered' || s === 'success') return 'completed';
           if (cause === 'USER_BUSY') return 'failed';
           if (cause === 'ORIGINATOR_CANCEL') return 'cancelled';
           if (cause === 'NO_ANSWER') return 'failed';
           return s || 'failed';
         };
 
-        const finalStatus = mapStatus(callStatus, hangupCause);
-        
-        // --- FIX 1: AGENT NAME RESOLUTION ---
-        let resolvedAgentName = agentName;
-        // If agentName looks like a SIP ID or is generic, try looking it up
-        if (!resolvedAgentName || resolvedAgentName === 'Unknown Agent' || resolvedAgentName.startsWith('zohoagent') || resolvedAgentName.includes('@')) {
-          const sipUser = req.body.CallerName || req.body.From || agentName;
-          try {
-            const { rows } = await pool.query(
-              "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%' OR username = $1",
-              [sipUser]
-            );
-            if (rows.length > 0) resolvedAgentName = rows[0].name;
-          } catch (e) { console.error('Agent lookup error:', e.message); }
-        }
-
-        console.log(`💾 Saving call to DB: ${callId} | Agent: ${resolvedAgentName} | Status: ${finalStatus} | Duration: ${duration}s`);
+        const finalStatus = mapStatus(callStatus || dialStatus, hangupCause);
+        console.log(`💾 Saving call to DB: ${callId} | Agent: ${agentName} | Status: ${finalStatus} | Duration: ${duration}s`);
 
         await pool.query(
           `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
            VALUES ($1, $2, $3, $4, '', $5, $6, NOW()) 
            ON CONFLICT (id) DO UPDATE SET 
              agent = CASE WHEN calls.agent = 'Unknown Agent' OR calls.agent LIKE 'zohoagent%' THEN EXCLUDED.agent ELSE calls.agent END,
-             duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END,
+             duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END, 
              status = EXCLUDED.status,
              reason = EXCLUDED.reason`,
-          [callId, resolvedAgentName, to, parseInt(duration), finalStatus, hangupCause]
+          [callId, agentName, to, parseInt(duration), finalStatus, hangupCause]
         );
-        console.log(`✅ Hangup processed for Call: ${callId} | Cause: ${hangupCause}`);
+        console.log(`✅ ${event} processed for Call: ${callId}`);
       } catch (err) {
-        console.error('❌ Error saving hangup data:', err.message);
+        console.error('❌ Error saving data:', err.message);
       }
     }
     return res.status(200).send('OK');
@@ -378,18 +382,6 @@ app.post('/answer', async (req, res) => {
 
   // Initial Answer Request: return Dial XML
   let to = req.body.To || req.body.to;
-  let agentName = req.body['X-PH-AgentName'];
-
-  if (!agentName && req.body.From) {
-    try {
-      const { rows } = await pool.query(
-        "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%'",
-        [req.body.From]
-      );
-      if (rows.length > 0) agentName = rows[0].name;
-    } catch (e) {}
-  }
-  if (!agentName) agentName = 'Agent';
 
   // Determine base URL for callbacks
   let protocol = req.headers['x-forwarded-proto'] || req.protocol;
@@ -434,7 +426,7 @@ app.post('/answer', async (req, res) => {
   </Dial>
 </Response>`;
 
-  console.log(`📡 Sending XML with action: ${actionUrl} and recordingCallback: ${recordingCallback}`);
+  console.log(`📡 Sending XML for Agent: ${agentName} | action: ${actionUrl} | recordingCallback: ${recordingCallback}`);
   res.set('Content-Type', 'text/xml').send(xml);
 });
 
