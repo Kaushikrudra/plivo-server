@@ -341,16 +341,32 @@ app.post('/answer', async (req, res) => {
         };
 
         const finalStatus = mapStatus(callStatus, hangupCause);
-        console.log(`💾 Saving call to DB: ${callId} | Status: ${finalStatus} | Duration: ${duration}s`);
+        
+        // --- FIX 1: AGENT NAME RESOLUTION ---
+        let resolvedAgentName = agentName;
+        // If agentName looks like a SIP ID or is generic, try looking it up
+        if (!resolvedAgentName || resolvedAgentName === 'Unknown Agent' || resolvedAgentName.startsWith('zohoagent') || resolvedAgentName.includes('@')) {
+          const sipUser = req.body.CallerName || req.body.From || agentName;
+          try {
+            const { rows } = await pool.query(
+              "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%' OR username = $1",
+              [sipUser]
+            );
+            if (rows.length > 0) resolvedAgentName = rows[0].name;
+          } catch (e) { console.error('Agent lookup error:', e.message); }
+        }
+
+        console.log(`💾 Saving call to DB: ${callId} | Agent: ${resolvedAgentName} | Status: ${finalStatus} | Duration: ${duration}s`);
 
         await pool.query(
           `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
            VALUES ($1, $2, $3, $4, '', $5, $6, NOW()) 
            ON CONFLICT (id) DO UPDATE SET 
+             agent = CASE WHEN calls.agent = 'Unknown Agent' OR calls.agent LIKE 'zohoagent%' THEN EXCLUDED.agent ELSE calls.agent END,
              duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END,
              status = EXCLUDED.status,
              reason = EXCLUDED.reason`,
-          [callId, agentName, to, parseInt(duration), finalStatus, hangupCause]
+          [callId, resolvedAgentName, to, parseInt(duration), finalStatus, hangupCause]
         );
         console.log(`✅ Hangup processed for Call: ${callId} | Cause: ${hangupCause}`);
       } catch (err) {
@@ -400,10 +416,20 @@ app.post('/answer', async (req, res) => {
   const dialElement = isSip ? `<User>${to}</User>` : `<Number>${to}</Number>`;
   const recordingCallback = `${baseUrl}/recording?agent=${encodeURIComponent(agentName)}`;
   const actionUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`;
+  const callbackUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`; // For status changes
   
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${process.env.PLIVO_NUMBER}" action="${actionUrl}" answerOnBridge="true" record="true" recordingCallbackUrl="${recordingCallback}" recordingCallbackMethod="POST" hangupOnStar="false" timeLimit="14400">
+  <Dial callerId="${process.env.PLIVO_NUMBER}" 
+        action="${actionUrl}" 
+        callbackUrl="${callbackUrl}"
+        callbackMethod="POST"
+        answerOnBridge="true" 
+        record="true" 
+        recordingCallbackUrl="${recordingCallback}" 
+        recordingCallbackMethod="POST" 
+        hangupOnStar="false" 
+        timeLimit="14400">
     ${dialElement}
   </Dial>
 </Response>`;
@@ -414,22 +440,24 @@ app.post('/answer', async (req, res) => {
 
 // ── RECORDING ─────────────────────────────────────────────────────────────────
 app.post('/recording', async (req, res) => {
-  console.log('⏺️ Recording Callback Received:', JSON.stringify(req.body));
+  console.log('🎙️ Recording webhook hit!', req.body.CallUUID, req.body.RecordingUrl);
+  console.log('⏺️ Recording Callback Full Data:', JSON.stringify(req.body));
 
   let agentName = req.query.agent;
   const callId = req.body.CallUUID || req.body.call_uuid;
   const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
   
-  if (!agentName || agentName === 'Agent' || agentName === 'Unknown Agent') {
+  if (!agentName || agentName === 'Agent' || agentName === 'Unknown Agent' || agentName.startsWith('zohoagent')) {
     // Try to find agent by From number or CallUUID in database
     try {
       const { rows } = await pool.query(
         'SELECT agent FROM calls WHERE id=$1', [callId]
       );
-      if (rows.length > 0) agentName = rows[0].agent;
-      else if (req.body.From) {
+      if (rows.length > 0 && rows[0].agent !== 'Unknown Agent' && !rows[0].agent.startsWith('zohoagent')) {
+        agentName = rows[0].agent;
+      } else if (req.body.From) {
         const { rows: agentRows } = await pool.query(
-          "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%'", [req.body.From]
+          "SELECT name FROM agents WHERE $1 LIKE '%' || username || '%' OR username = $1", [req.body.From]
         );
         if (agentRows.length > 0) agentName = agentRows[0].name;
       }
@@ -448,10 +476,10 @@ app.post('/recording', async (req, res) => {
   }
 
   if (callId) {
-    console.log('🎙️ Recording webhook:', {
+    console.log('🎙️ Processing Recording for:', {
       callId: callId,
       url: recordingUrl,
-      duration: duration
+      agent: agentName
     });
 
     try {
@@ -468,7 +496,7 @@ app.post('/recording', async (req, res) => {
         await pool.query(
           `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (id) DO UPDATE SET recording_url = EXCLUDED.recording_url`,
+           ON CONFLICT (id) DO UPDATE SET recording_url = EXCLUDED.recording_url, agent = CASE WHEN calls.agent = 'Unknown Agent' THEN EXCLUDED.agent ELSE calls.agent END`,
           [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, status, hangupCause]
         );
       }
