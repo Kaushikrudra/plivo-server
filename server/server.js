@@ -49,6 +49,10 @@ async function initDB() {
       );
     `);
 
+    await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`).catch(() => {});
+    await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_url TEXT DEFAULT ''`).catch(() => {});
+    await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0`).catch(() => {});
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS otps (
         username VARCHAR(255) PRIMARY KEY,
@@ -288,8 +292,25 @@ app.get('/token', async (req, res) => {
 app.post('/answer', async (req, res) => {
   console.log('📞 Answer Webhook:', JSON.stringify(req.body));
   
+  const callStatus = req.body.CallStatus;
+  const dialStatus = req.body.DialStatus;
+  const hangupCause = req.body.HangupCause;
   const event = req.body.Event || req.body.event || '';
-  const callStatus = req.body.CallStatus || req.body.call_status || '';
+
+  if (
+    callStatus === 'cancel' ||
+    callStatus === 'completed' ||
+    dialStatus === 'busy' ||
+    dialStatus === 'cancel' ||
+    hangupCause === 'ORIGINATOR_CANCEL' ||
+    hangupCause === 'USER_BUSY' ||
+    (event === 'Redirect' && (dialStatus === 'busy' || dialStatus === 'cancel'))
+  ) {
+    console.log('🛑 Stopping redial. Status:', callStatus, dialStatus, hangupCause);
+    res.set('Content-Type', 'text/xml');
+    return res.send('<Response><Hangup/></Response>');
+  }
+  
   const callId = req.body.CallUUID || req.body.call_uuid;
 
   // If this is a Hangup or the call is completed, save the duration and status
@@ -410,10 +431,6 @@ app.post('/recording', async (req, res) => {
   let recordingUrl = req.body.RecordingUrl || req.body.RecordUrl || req.body.record_url || '';
   if (recordingUrl) {
     recordingUrl = recordingUrl.replace('api.plivo.com', 'media.plivo.com');
-    if (!recordingUrl.endsWith('.mp3') && !recordingUrl.includes('.mp3?')) {
-      // Some URLs might have query params, but usually Plivo URLs end with UUID or .mp3
-      if (!recordingUrl.includes('?')) recordingUrl = recordingUrl + '.mp3';
-    }
   }
 
   if (callId) {
@@ -457,7 +474,7 @@ app.get('/calls', async (req, res) => {
   const { username, role } = req.query;
   try {
     if (role === 'admin' || !username) {
-      const { rows } = await pool.query('SELECT * FROM calls ORDER BY time ASC');
+      const { rows } = await pool.query('SELECT id, agent, "to", duration, recording_url, status, reason, time FROM calls ORDER BY time DESC LIMIT 200');
       return res.json(rows.map(r => ({
         id: r.id, agent: r.agent, to: r.to,
         duration: r.duration, recordingUrl: r.recording_url,
@@ -469,7 +486,7 @@ app.get('/calls', async (req, res) => {
     );
     const agentName = agentRows[0]?.name || username;
     const { rows } = await pool.query(
-      'SELECT * FROM calls WHERE LOWER(agent)=LOWER($1) ORDER BY time ASC', [agentName]
+      'SELECT id, agent, "to", duration, recording_url, status, reason, time FROM calls WHERE LOWER(agent)=LOWER($1) ORDER BY time DESC LIMIT 200', [agentName]
     );
     res.json(rows.map(r => ({
       id: r.id, agent: r.agent, to: r.to,
