@@ -293,6 +293,12 @@
                 <span class="font-bold text-sm hidden lg:block uppercase tracking-wider">Team Hub</span>
             </button>
         </nav>
+        <div class="mt-auto w-full pt-4 border-t border-slate-800/50 lg:hidden">
+            <button onclick="logoutAgent()" class="flex items-center gap-5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 p-4 rounded-[1.25rem] w-full text-left transition-all group">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                <span class="font-bold text-sm uppercase tracking-wider">Logout</span>
+            </button>
+        </div>
     </aside>
 
     <!-- Content Area -->
@@ -310,6 +316,9 @@
                 </div>
             </div>
             <div class="flex items-center gap-2 sm:gap-4">
+                <button onclick="logoutAgent()" class="sm:hidden p-2 text-slate-400 hover:text-rose-500 transition-colors" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                </button>
                 <button onclick="switchView('logs')" class="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors relative">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 </button>
@@ -1146,11 +1155,13 @@
     document.getElementById('hangupButton').addEventListener('click', () => { if(plivoBrowserSdk) plivoBrowserSdk.client.hangup(); });
     document.querySelectorAll('[data-key]').forEach(btn => { btn.addEventListener('click', () => { document.getElementById('numberInput').value += btn.dataset.key; updateButtons(); }); });
     document.getElementById('numberInput').addEventListener('input', updateButtons);
-    document.getElementById('logoutButton').addEventListener('click', () => { 
+    function logoutAgent() {
         localStorage.removeItem('loggedInAgent'); 
         sessionStorage.removeItem('loggedInAgent');
         location.reload(); 
-    });
+    }
+
+    document.getElementById('logoutButton').addEventListener('click', logoutAgent);
 
     window.onload = async () => {
         await fetchAgents();
