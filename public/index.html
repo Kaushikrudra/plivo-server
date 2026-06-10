@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -68,7 +69,7 @@
             bottom: 0 !important;
             width: 280px !important;
             transform: translateX(-100%);
-            z-index: 50 !important;
+            z-index: 40 !important;
             transition: transform 0.3s ease !important;
             display: flex !important;
         }
@@ -82,15 +83,19 @@
             min-width: 100% !important;
             flex: none !important;
         }
+        header {
+            position: relative !important;
+            z-index: 50 !important;
+        }
         #mobileOverlay {
             display: none;
             position: fixed;
             inset: 0;
             background: rgba(0,0,0,0.5);
-            z-index: 40;
+            z-index: 30;
         }
         #mobileOverlay.show {
-            display: block;
+            display: block !important;
         }
         .stats-grid {
             grid-template-columns: 1fr !important;
@@ -144,7 +149,7 @@
 
   <!-- Toast Notification Container -->
   <div id="toastContainer"></div>
-  <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50 z-40 hidden"></div>
+  <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50"></div>
 
   <!-- Login Screen -->
   <section id="loginScreen" class="min-h-screen flex items-center justify-center p-6 bg-[#0f172a] overflow-hidden relative">
@@ -586,6 +591,7 @@
         if (viewName === 'dashboard') { fab.classList.remove('hidden'); } else { fab.classList.add('hidden'); closeDialer(); }
         if (viewName === 'logs') fetchHistory();
         if (viewName === 'agents') fetchAgents();
+        closeSidebar();
     }
 
     function toggleDialer() { const drawer = document.getElementById('dialerDrawer'); if (drawer.classList.contains('drawer-closed')) { document.getElementById('numberInput').value = ''; if (typeof updateButtons === 'function') updateButtons(); drawer.classList.remove('drawer-closed'); drawer.classList.add('drawer-open'); } else { drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); } }
@@ -594,9 +600,36 @@
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('mobileOverlay');
-        sidebar.classList.toggle('mobile-open');
-        overlay.classList.toggle('hidden');
+        const isOpen = sidebar.classList.toggle('mobile-open');
+        if (isOpen) {
+            overlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
+        } else {
+            overlay.classList.remove('show');
+            document.body.style.overflow = '';
+        }
     }
+
+    function closeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeSidebar();
+            closeDialer();
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        if (window.innerWidth >= 1024) {
+            closeSidebar();
+        }
+    });
 
     function toggleAuthMode() {
         const loginContainer = document.getElementById('loginContainer');
