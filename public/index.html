@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -523,6 +522,7 @@
   <script>
     const SERVER = window.location.origin.startsWith('file') ? 'http://localhost:3000' : window.location.origin;
     let plivoBrowserSdk = null;
+    let ringtone = null;
     let timerInterval = null;
     let timerSeconds = 0;
     let sdkReady = false;
@@ -534,6 +534,14 @@
     let distChart = null;
     let currentDialledNumber = '';
     let isEditingAgent = false;
+
+    function stopRingtone() {
+        if (ringtone) {
+            ringtone.pause();
+            ringtone.currentTime = 0;
+            ringtone = null;
+        }
+    }
 
     function showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
@@ -914,16 +922,39 @@
         try {
             const res = await fetch(`${SERVER}/token?username=${loggedInAgent.username}`);
             const creds = await res.json();
-            plivoBrowserSdk = new window.Plivo({ debug: 'ALL', permOnClick: true, remoteAudioElement: document.getElementById('remoteAudio') });
+            
+            plivoBrowserSdk = new window.Plivo({ 
+                debug: 'DEBUG', 
+                permOnClick: true, 
+                remoteAudioElement: document.getElementById('remoteAudio'),
+                audioConstraints: { 
+                    optional: [{ googEchoCancellation: true }] 
+                },
+                enableTracking: true,
+                closeProtection: false,
+                maxAverageBitrate: 48000
+            });
+
             plivoBrowserSdk.client.on('onLogin', () => { sdkReady = true; setStatus('Ready', 'ready'); updateButtons(); });
             plivoBrowserSdk.client.on('onLoginFailed', () => { sdkReady = false; setStatus('Login Failed', 'error'); updateButtons(); });
-            plivoBrowserSdk.client.on('onCalling', () => { callActive = true; setStatus('Calling...', 'calling'); updateButtons(); });
-            plivoBrowserSdk.client.on('onCallAnswered', () => { setStatus('Connected', 'connected'); startTimer(); });
+            plivoBrowserSdk.client.on('onCalling', () => { 
+                callActive = true; 
+                setStatus('Calling...', 'calling'); 
+                updateButtons(); 
+            });
+            plivoBrowserSdk.client.on('onCallAnswered', () => { 
+                console.log('✅ Call answered');
+                setStatus('Connected', 'connected'); 
+                startTimer(); 
+                stopRingtone();
+                plivoBrowserSdk.client.unmute(); // Force unmute on connect
+            });
             plivoBrowserSdk.client.on('onCallFailed', (reason) => { 
                 console.log('Call Failed Reason:', reason);
                 setStatus('Call Failed', 'error'); 
                 callActive = false; 
                 stopTimer(); 
+                stopRingtone();
                 updateButtons(); 
                 
                 // Only log failed calls that didn't even start (no backend action will trigger)
@@ -937,6 +968,7 @@
                 setStatus(sdkReady?'Ready':'Connecting', sdkReady?'ready':'connecting'); 
                 callActive = false; 
                 stopTimer(); 
+                stopRingtone();
                 updateButtons(); 
                 
                 // Backend action/recording webhooks will handle connected calls.
@@ -1086,7 +1118,7 @@
         } catch(e) { showToast('Failed to save agent', 'error'); } 
     });
 
-    document.getElementById('callButton').addEventListener('click', () => { 
+    document.getElementById('callButton').addEventListener('click', async () => { 
         const num = document.getElementById('numberInput').value.trim(); 
         if(!num) return;
 
@@ -1096,6 +1128,9 @@
         }
 
         try {
+            // Request microphone permissions explicitly
+            await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            
             setStatus('Calling...', 'calling');
             currentDialledNumber = num;
             
@@ -1108,11 +1143,17 @@
             updateButtons();
         } catch (e) {
             console.error('Call Error:', e);
-            showToast('Error initiating browser call', 'error');
+            showToast('Microphone access denied or error initiating call', 'error');
             setStatus('Ready', 'ready');
         }
     });
-    document.getElementById('hangupButton').addEventListener('click', () => { if(plivoBrowserSdk) plivoBrowserSdk.client.hangup(); });
+
+    document.getElementById('hangupButton').addEventListener('click', () => { 
+        if(plivoBrowserSdk) {
+            plivoBrowserSdk.client.hangup();
+            stopRingtone();
+        } 
+    });
     document.querySelectorAll('[data-key]').forEach(btn => { btn.addEventListener('click', () => { document.getElementById('numberInput').value += btn.dataset.key; updateButtons(); }); });
     document.getElementById('numberInput').addEventListener('input', updateButtons);
     function logoutAgent() {
