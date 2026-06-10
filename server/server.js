@@ -292,21 +292,21 @@ app.get('/token', async (req, res) => {
 app.post('/answer', async (req, res) => {
   console.log('📞 Answer Webhook:', JSON.stringify(req.body));
   
-  const callStatus = req.body.CallStatus;
-  const dialStatus = req.body.DialStatus;
-  const hangupCause = req.body.HangupCause;
+  const callStatus = req.body.CallStatus || req.body.call_status || '';
+  const dialStatus = req.body.DialStatus || req.body.dial_status || '';
+  const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
   const event = req.body.Event || req.body.event || '';
 
   // IMPORTANT: Never block Hangup or StartApp events - they need to save data
-  if (event !== 'Hangup' && event !== 'StartApp') {
+  if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp') {
     if (
-      callStatus === 'cancel' ||
-      callStatus === 'completed' ||
-      dialStatus === 'busy' ||
-      dialStatus === 'cancel' ||
+      callStatus.toLowerCase() === 'cancel' ||
+      callStatus.toLowerCase() === 'completed' ||
+      dialStatus.toLowerCase() === 'busy' ||
+      dialStatus.toLowerCase() === 'cancel' ||
       hangupCause === 'ORIGINATOR_CANCEL' ||
       hangupCause === 'USER_BUSY' ||
-      (event === 'Redirect' && (dialStatus === 'busy' || dialStatus === 'cancel'))
+      (event.toLowerCase() === 'redirect' && (dialStatus.toLowerCase() === 'busy' || dialStatus.toLowerCase() === 'cancel'))
     ) {
       console.log('🛑 Stopping redial. Event:', event, 'Status:', callStatus, dialStatus);
       res.set('Content-Type', 'text/xml');
@@ -320,7 +320,6 @@ app.post('/answer', async (req, res) => {
   if (event.toLowerCase() === 'hangup' || callStatus.toLowerCase() === 'completed') {
     let duration = req.body.Duration || req.body.duration || req.body.BillDuration || 0;
     const to = req.body.To || req.body.to || '';
-    const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
     
     let agentName = req.body['X-PH-AgentName'] || req.body.CallerName || 'Unknown Agent';
     if (agentName === 'Unknown Agent' && req.body.From) {
@@ -332,16 +331,28 @@ app.post('/answer', async (req, res) => {
 
     if (callId) {
       try {
+        const mapStatus = (status, cause) => {
+          const s = (status || '').toLowerCase();
+          if (s === 'completed' || s === 'answered') return 'completed';
+          if (cause === 'USER_BUSY') return 'failed';
+          if (cause === 'ORIGINATOR_CANCEL') return 'cancelled';
+          if (cause === 'NO_ANSWER') return 'failed';
+          return s || 'failed';
+        };
+
+        const finalStatus = mapStatus(callStatus, hangupCause);
+        console.log(`💾 Saving call to DB: ${callId} | Status: ${finalStatus} | Duration: ${duration}s`);
+
         await pool.query(
           `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
            VALUES ($1, $2, $3, $4, '', $5, $6, NOW()) 
            ON CONFLICT (id) DO UPDATE SET 
-             duration = EXCLUDED.duration, 
+             duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END,
              status = EXCLUDED.status,
              reason = EXCLUDED.reason`,
-          [callId, agentName, to, parseInt(duration), callStatus || 'completed', hangupCause]
+          [callId, agentName, to, parseInt(duration), finalStatus, hangupCause]
         );
-        console.log(`✅ Hangup processed for Call: ${callId} | Duration: ${duration}s | Cause: ${hangupCause}`);
+        console.log(`✅ Hangup processed for Call: ${callId} | Cause: ${hangupCause}`);
       } catch (err) {
         console.error('❌ Error saving hangup data:', err.message);
       }
@@ -437,18 +448,31 @@ app.post('/recording', async (req, res) => {
   }
 
   if (callId) {
+    console.log('🎙️ Recording webhook:', {
+      callId: callId,
+      url: recordingUrl,
+      duration: duration
+    });
+
     try {
-      await pool.query(
-        `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) 
-         ON CONFLICT (id) DO UPDATE SET 
-           duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END, 
-           recording_url = EXCLUDED.recording_url, 
-           status = EXCLUDED.status,
-           reason = CASE WHEN EXCLUDED.reason <> '' THEN EXCLUDED.reason ELSE calls.reason END`,
-        [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, status, hangupCause]
+      const result = await pool.query(
+        `UPDATE calls SET 
+          recording_url = $1,
+          duration = CASE WHEN $2 > 0 THEN $2 ELSE duration END
+         WHERE id = $3`,
+        [recordingUrl, parseInt(duration), callId]
       );
-      console.log(`📝 Call recording saved: ${callId} | URL: ${recordingUrl} | Duration: ${duration}s | Cause: ${hangupCause}`);
+
+      if (result.rowCount === 0) {
+        console.log('⚠️ Call not found for recording, inserting:', callId);
+        await pool.query(
+          `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           ON CONFLICT (id) DO UPDATE SET recording_url = EXCLUDED.recording_url`,
+          [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, status, hangupCause]
+        );
+      }
+      console.log('✅ Recording saved for:', callId);
     } catch (err) {
       console.error('❌ Save recording error:', err.message);
     }
