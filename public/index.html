@@ -57,6 +57,23 @@
     .fab-btn:hover { transform: scale(1.1) rotate(5deg); }
     .fab-btn:active { transform: scale(0.9); }
 
+    #mobileOverlay {
+        display: none !important;
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+    }
+    #mobileOverlay.show {
+        display: block !important;
+        background: rgba(0,0,0,0.5);
+    }
+
+    header {
+        position: relative !important;
+        z-index: 40 !important;
+        background-color: white !important;
+    }
+
     @media (max-width: 1023px) {
         #softphoneScreen {
             display: block !important;
@@ -86,16 +103,6 @@
         header {
             position: relative !important;
             z-index: 50 !important;
-        }
-        #mobileOverlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 30;
-        }
-        #mobileOverlay.show {
-            display: block !important;
         }
         .stats-grid {
             grid-template-columns: 1fr !important;
@@ -149,7 +156,7 @@
 
   <!-- Toast Notification Container -->
   <div id="toastContainer"></div>
-  <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/50"></div>
+  <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0"></div>
 
   <!-- Login Screen -->
   <section id="loginScreen" class="min-h-screen flex items-center justify-center p-6 bg-[#0f172a] overflow-hidden relative">
