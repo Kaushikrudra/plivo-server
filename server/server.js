@@ -375,22 +375,33 @@ app.post('/answer', async (req, res) => {
   const agentName = await resolveAgentName(inputAgent, callId);
   console.log(`👤 Resolved Agent Name: ${agentName} (from input: ${inputAgent})`);
 
-  // --- REDIAL LOOP PREVENTION ---
-  if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp' && event.toLowerCase() !== 'dialhangup') {
-    if (
-      callStatus.toLowerCase() === 'cancel' ||
-      callStatus.toLowerCase() === 'completed' ||
-      dialStatus.toLowerCase() === 'busy' ||
-      dialStatus.toLowerCase() === 'cancel' ||
-      hangupCause === 'ORIGINATOR_CANCEL' ||
-      hangupCause === 'USER_BUSY' ||
-      (event.toLowerCase() === 'redirect' && (dialStatus.toLowerCase() === 'busy' || dialStatus.toLowerCase() === 'cancel'))
-    ) {
-      console.log('🛑 Stopping redial. Event:', event, 'Status:', callStatus, dialStatus);
-      res.set('Content-Type', 'text/xml');
-      return res.send('<Response><Hangup/></Response>');
-    }
-  }
+                                                                                                                                                                   
+      // --- REDIAL LOOP PREVENTION ---                                                                                        
+      // If dialStatus is present, it means the dialed leg to the customer has ended.                                          
+      // We must return Hangup immediately to stop Plivo from looping and redialing.                                           
+      if (dialStatus) {                                                                                                        
+        console.log('🛑 Dial leg ended. DialStatus:', dialStatus, 'HangupCause:', hangupCause, '- Hanging up call to prevent   
+  redial.');                                                                                                                   
+        res.set('Content-Type', 'text/xml');                                                                                   
+        return res.send('<Response><Hangup/></Response>');                                                                     
+      }                                                                                                                        
+                                                                                                                               
+      if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp' && event.toLowerCase() !== 'dialhangup') {    
+        if (                                                                                                                   
+          callStatus.toLowerCase() === 'cancel' ||
+          callStatus.toLowerCase() === 'completed' ||
+          dialStatus.toLowerCase() === 'busy' ||
+          dialStatus.toLowerCase() === 'cancel' ||
+          hangupCause === 'ORIGINATOR_CANCEL' ||
+          hangupCause === 'USER_BUSY' ||
+          (event.toLowerCase() === 'redirect' && (dialStatus.toLowerCase() === 'busy' || dialStatus.toLowerCase() ===          
+  'cancel'))
+        ) {
+          console.log('🛑 Stopping redial. Event:', event, 'Status:', callStatus, dialStatus);
+          res.set('Content-Type', 'text/xml');
+          return res.send('<Response><Hangup/></Response>');
+        }
+      }
 
   // --- HANGUP / SAVE LOGIC ---
   if (event.toLowerCase() === 'hangup' || event.toLowerCase() === 'dialhangup' || callStatus.toLowerCase() === 'completed') {
