@@ -43,7 +43,7 @@
     /* Dialer Bottom Sheet Styles */
     #dialerDrawer {
       transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-      max-height: 520px;
+      max-height: 420px;
       border-radius: 2rem 2rem 0 0;
     }
     .drawer-closed { transform: translateY(110%); }
@@ -83,7 +83,7 @@
             left: 0 !important;
             top: 0 !important;
             bottom: 0 !important;
-            width: 280px !important;
+            width: 240px !important;
             transform: translateX(-100%);
             z-index: 40 !important;
             transition: transform 0.3s ease !important;
@@ -310,7 +310,7 @@
     <!-- Content Area -->
     <div class="main-content flex-1 flex flex-col min-w-0 w-full overflow-hidden">
         <!-- Top Bar -->
-        <header class="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-4 lg:px-8 shrink-0">
+        <header class="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-4 lg:px-8 shrink-0">
             <div class="flex items-center gap-2 sm:gap-4">
                 <button onclick="toggleSidebar()" class="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -354,21 +354,21 @@
                     <div class="absolute bottom-[10%] right-[-5%] w-[250px] h-[250px] sm:w-[400px] sm:h-[400px] bg-indigo-400 rounded-full blur-[80px] sm:blur-[120px]"></div>
                 </div>
 
-                <div class="h-full p-4 sm:p-6 lg:p-8 overflow-y-auto relative z-10">
+                <div class="h-full p-3 sm:p-4 lg:p-6 overflow-y-auto relative z-10">
                     <div class="stats-grid grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6 mb-8 w-full">
-                        <div class="bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-3xl border border-blue-100 w-full shadow-sm">
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-blue-100 w-full shadow-sm">
                             <p class="text-[10px] sm:text-xs font-bold text-blue-500 uppercase tracking-widest mb-1">Total Calls</p>
                             <h3 id="stat-total-calls" class="text-2xl sm:text-3xl font-black text-blue-900">0</h3>
                         </div>
-                        <div class="bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-3xl border border-emerald-100 w-full shadow-sm">
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-emerald-100 w-full shadow-sm">
                             <p class="text-[10px] sm:text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Agents</p>
                             <h3 id="stat-total-agents" class="text-2xl sm:text-3xl font-black text-emerald-900">0</h3>
                         </div>
-                        <div class="bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-3xl border border-indigo-100 w-full shadow-sm">
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-indigo-100 w-full shadow-sm">
                             <p class="text-[10px] sm:text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Talk Time</p>
                             <h3 id="stat-talk-time" class="text-2xl sm:text-3xl font-black text-indigo-900">0m</h3>
                         </div>
-                        <div class="bg-white/80 backdrop-blur-sm p-5 sm:p-6 rounded-3xl border border-amber-100 w-full shadow-sm">
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-amber-100 w-full shadow-sm">
                             <p class="text-[10px] sm:text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Status</p>
                             <h3 class="text-2xl sm:text-3xl font-black text-amber-900 italic">Idle</h3>
                         </div>
