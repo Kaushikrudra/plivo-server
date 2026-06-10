@@ -559,6 +559,62 @@ app.get('/calls', async (req, res) => {
 
 app.get('/status', (req, res) => res.json({ status: 'running' }));
 
+// ── PLAY RECORDING (Authenticated Proxy) ──────────────────────────────────────
+app.get('/play-recording', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'No URL provided' });
+  
+  try {
+    const authId = process.env.PLIVO_AUTH_ID;
+    const authToken = process.env.PLIVO_AUTH_TOKEN;
+    const credentials = Buffer.from(`${authId}:${authToken}`).toString('base64');
+    
+    console.log('🎵 Proxying recording:', url);
+    
+    const response = await fetch(decodeURIComponent(url), {
+      headers: { 
+        'Authorization': `Basic ${credentials}`,
+        'Accept': 'audio/mpeg, audio/*'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error('❌ Recording fetch failed:', response.status);
+      return res.status(response.status).json({ error: 'Recording not accessible' });
+    }
+    
+    // Stream the audio back to browser
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'no-cache');
+    
+    // Node built-in fetch response.body is a ReadableStream
+    // We can convert it to a Node Readable if needed, but in recent Express/Node
+    // we can use standard web stream pipe if supported or conversion.
+    // For Node 18+ global fetch:
+    const reader = response.body.getReader();
+    
+    // Helper to pipe Web Stream to Node Writable
+    const push = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          res.end();
+          break;
+        }
+        res.write(value);
+      }
+    };
+    
+    push();
+    console.log('✅ Recording streaming started');
+    
+  } catch (err) {
+    console.error('❌ Recording proxy error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── FALLBACK ──────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   const distIndex = path.join(__dirname, '../dist/index.html');
