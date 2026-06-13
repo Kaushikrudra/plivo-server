@@ -385,7 +385,7 @@
                         </div>
                         <div class="bg-white p-5 sm:p-6 rounded-3xl border border-slate-100 shadow-sm w-full overflow-hidden">
                             <h4 class="text-xs sm:text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/></svg>
                                 Call Distribution
                             </h4>
                             <div id="statusDistChart" class="w-full"></div>
@@ -833,6 +833,7 @@
 
     function applyFilters() { const num = document.getElementById('filterNumber').value.toLowerCase(); const agent = document.getElementById('filterAgent').value; const date = document.getElementById('filterDate').value; const filtered = allCalls.filter(c => { const matchesNum = c.to.toLowerCase().includes(num); const matchesAgent = !agent || c.agent === agent; const matchesDate = !date || new Date(c.time).toLocaleDateString() === new Date(date).toLocaleDateString(); return matchesNum && matchesAgent && matchesDate; }); renderHistory(filtered); }
 
+    
     function renderHistory(calls) {
         const formatDuration = (sec) => {
             if (!sec || sec == 0) return '0s';
@@ -846,7 +847,7 @@
             
             const recordingControl = call.recordingUrl && call.recordingUrl !== '' ? `
                 <div class="flex items-center justify-end gap-2">
-                    <audio controls src="/play-recording?url=${encodeURIComponent(call.recordingUrl)}" class="h-8 w-44 sm:w-48" style="height: 32px; width: 180px;"></audio>
+                    <audio controls src="${SERVER}/play-recording?url=${encodeURIComponent(call.recordingUrl)}" class="h-8 w-44 sm:w-48" style="height: 32px; width: 180px;"></audio>
                     <a href="${call.recordingUrl}" target="_blank" class="p-1.5 text-slate-400 hover:text-blue-500 transition-colors" title="Download/Open Original">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14\"/></svg>
                     </a>
@@ -910,78 +911,129 @@
         document.getElementById('statusText').textContent = label;
         const s = document.getElementById('status');
         s.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition-all ';
-        if (type === 'ready' || type === 'connected') { s.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100'); s.querySelector('span').className = 'w-2 h-2 bg-emerald-500 rounded-full'; }
-        else if (type === 'error') { s.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100'); s.querySelector('span').className = 'w-2 h-2 bg-rose-500 rounded-full'; }
-        else { s.classList.add('bg-amber-50', 'text-amber-600', 'border-amber-100'); s.querySelector('span').className = 'w-2 h-2 bg-amber-500 rounded-full status-pulse'; }
+        if (type === 'ready' || type === 'connected') { 
+            s.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100'); 
+            s.querySelector('span:first-child').className = 'w-2 h-2 bg-emerald-500 rounded-full'; 
+        }
+        else if (type === 'error') { 
+            s.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100'); 
+            s.querySelector('span:first-child').className = 'w-2 h-2 bg-rose-500 rounded-full'; 
+        }
+        else { 
+            s.classList.add('bg-amber-50', 'text-amber-600', 'border-amber-100'); 
+            s.querySelector('span:first-child').className = 'w-2 h-2 bg-amber-500 rounded-full status-pulse'; 
+        }
     }
 
     function startTimer() { stopTimer(); timerSeconds = 0; document.getElementById('timer').classList.remove('hidden'); timerInterval = setInterval(() => { timerSeconds++; const m = String(Math.floor(timerSeconds/60)).padStart(2,'0'); const s = String(timerSeconds%60).padStart(2,'0'); document.getElementById('timer').textContent = `${m}:${s}`; }, 1000); }
     function stopTimer() { if(timerInterval) clearInterval(timerInterval); document.getElementById('timer').classList.add('hidden'); }
 
+    let initAttempt = 0;
     async function initPlivo() {
+        initAttempt++;
+        if (initAttempt > 3) {
+            showToast("Server unavailable. Please refresh.", "error");
+            setStatus("Offline", "error");
+            return;
+        }
+
         try {
+            if (initAttempt > 1) showToast(`Reconnecting... (attempt ${initAttempt}/3)`, "info");
+            setStatus("Connecting...", "busy");
+
+            // 1. Wake up server
+            await fetch(`${SERVER}/health`).catch(() => {});
+
+            // 2. Fetch token
             const res = await fetch(`${SERVER}/token?username=${loggedInAgent.username}`);
             const creds = await res.json();
-            
-            plivoBrowserSdk = new window.Plivo({ 
-                debug: 'DEBUG', 
-                permOnClick: true, 
+
+            // 3. Cleanup old instance
+            if (plivoBrowserSdk) {
+                try { plivoBrowserSdk.destroy(); } catch(e) {}
+            }
+
+            plivoBrowserSdk = new window.Plivo({
+                debug: 'OFF',
+                permOnClick: true,
                 remoteAudioElement: document.getElementById('remoteAudio'),
-                audioConstraints: { 
-                    optional: [{ googEchoCancellation: true }] 
-                },
+                audioConstraints: { optional: [{ googEchoCancellation: true }] },
                 enableTracking: true,
                 closeProtection: false,
                 maxAverageBitrate: 48000
             });
 
-            plivoBrowserSdk.client.on('onLogin', () => { sdkReady = true; setStatus('Ready', 'ready'); updateButtons(); });
-            plivoBrowserSdk.client.on('onLoginFailed', () => { sdkReady = false; setStatus('Login Failed', 'error'); updateButtons(); });
+            let loginTimeout = setTimeout(() => {
+                console.warn("Login timeout - retrying...");
+                initPlivo();
+            }, 15000);
+
+            plivoBrowserSdk.client.on('onLogin', () => {
+                clearTimeout(loginTimeout);
+                initAttempt = 0;
+                sdkReady = true;
+                console.log('✅ Plivo Ready');
+                setStatus("Ready", "ready");
+                updateButtons();
+            });
+
+            plivoBrowserSdk.client.on('onLoginFailed', () => {
+                clearTimeout(loginTimeout);
+                sdkReady = false;
+                console.error('❌ Login failed');
+                // Retries up to 2 times (3 total attempts) with 5s delay
+                if (initAttempt < 3) {
+                    setTimeout(initPlivo, 5000);
+                } else {
+                    setStatus("Login Failed", "error");
+                    updateButtons();
+                }
+            });
+
             plivoBrowserSdk.client.on('onCalling', () => { 
                 callActive = true; 
                 setStatus('Calling...', 'calling'); 
                 updateButtons(); 
             });
+
             plivoBrowserSdk.client.on('onCallAnswered', () => { 
-                console.log('✅ Call answered');
                 setStatus('Connected', 'connected'); 
                 startTimer(); 
                 stopRingtone();
-                plivoBrowserSdk.client.unmute(); // Force unmute on connect
+                plivoBrowserSdk.client.unmute(); 
             });
+
             plivoBrowserSdk.client.on('onCallFailed', (reason) => { 
-                console.log('Call Failed Reason:', reason);
                 setStatus('Call Failed', 'error'); 
                 callActive = false; 
                 stopTimer(); 
-                stopRingtone();
+                stopRingtone(); 
                 updateButtons(); 
-                
-                // Only log failed calls that didn't even start (no backend action will trigger)
-                if (currentDialledNumber) {
-                    logCall('failed', 0);
-                }
+                if (currentDialledNumber) logCall('failed', 0); 
                 currentDialledNumber = ''; 
-                setTimeout(() => fetchHistory(), 3000); 
+                setTimeout(() => { 
+                    fetchHistory(); 
+                    setStatus('Ready', 'ready'); 
+                }, 3000); 
             });
+
             plivoBrowserSdk.client.on('onCallTerminated', () => { 
-                setStatus(sdkReady?'Ready':'Connecting', sdkReady?'ready':'connecting'); 
+                setStatus(sdkReady ? 'Ready' : 'Connecting', sdkReady ? 'ready' : 'calling'); 
                 callActive = false; 
                 stopTimer(); 
-                stopRingtone();
+                stopRingtone(); 
                 updateButtons(); 
-                
-                // Backend action/recording webhooks will handle connected calls.
-                // We only log locally if the call was extremely short or never connected.
-                if (currentDialledNumber && timerSeconds < 2) {
-                    logCall('completed', timerSeconds);
-                }
-                
+                if (currentDialledNumber && timerSeconds < 2) logCall('completed', timerSeconds); 
                 currentDialledNumber = ''; 
                 setTimeout(() => fetchHistory(), 4000); 
             });
+
             plivoBrowserSdk.client.login(creds.username, creds.password);
-        } catch(e) { setStatus('Plivo Error', 'error'); }
+
+        } catch (e) {
+            console.error('Init error:', e);
+            setTimeout(initPlivo, 8000);
+        }
     }
 
     function updateButtons() { const hasNumber = document.getElementById('numberInput').value.trim().length > 0; document.getElementById('callButton').disabled = !sdkReady || callActive || !hasNumber; document.getElementById('hangupButton').disabled = !callActive; document.getElementById('muteButton').disabled = !callActive; }
