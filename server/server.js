@@ -6,6 +6,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import pg from 'pg';
 import fs from 'fs';
+import { Readable } from 'stream';
 
 dotenv.config();
 
@@ -14,6 +15,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// ── In-Memory Active Call State Map ───────────────────────────────────────────
+const activeCalls = new Map();
+
+// ── Structured Logger Helper (Task 5) ─────────────────────────────────────────
+function logEvent(event, callUUID, metadata = {}) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    event,
+    callUUID,
+    ...metadata
+  };
+  console.log(`[StructuredLog] ${JSON.stringify(logEntry)}`);
+}
 
 // ── PostgreSQL Connection ─────────────────────────────────────────────────────
 const pool = new Pool({
@@ -94,12 +109,31 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const distPath = path.join(__dirname, '../dist');
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-} else {
-  app.use(express.static(path.join(__dirname, '../public')));
-}
+// ── HEALTH & STATUS ───────────────────────────────────────────────────────────
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok', time: new Date() }));
+app.get('/status', (req, res) => {
+  const activeList = [];
+  const now = new Date();
+  for (const [customerCallUUID, callData] of activeCalls.entries()) {
+    const durationSeconds = Math.floor((now - callData.callStartTime) / 1000);
+    activeList.push({
+      customerCallUUID,
+      customerNumber: callData.customerNumber,
+      conferenceRoom: callData.conferenceRoom,
+      agentsCalled: callData.agentsCalled.map(a => ({
+        agentName: a.agentName,
+        callUUID: a.callUUID,
+        status: a.status
+      })),
+      answeredBy: callData.answeredBy,
+      callStartTime: callData.callStartTime.toISOString(),
+      durationSeconds
+    });
+  }
+  res.json({ status: 'running', activeCalls: activeList });
+});
+
+app.use(express.static(path.join(__dirname, '../public')));
 
 // ── AGENTS & AUTH ─────────────────────────────────────────────────────────────
 
@@ -353,6 +387,27 @@ app.post('/answer', async (req, res) => {
   const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
   const callId = req.body.CallUUID || req.body.call_uuid || req.body.DialALegUUID;
 
+  // Auto-detect incoming calls (customer calling the Plivo number) and redirect them to /incoming-call
+  const direction = req.body.Direction || req.body.direction || '';
+  let to = req.body.To || req.body.to || '';
+  const cleanTo = to.replace(/\D/g, '');
+  const cleanPlivoNum = (process.env.PLIVO_NUMBER || '').replace(/\D/g, '');
+  const isIncoming = (direction.toLowerCase() === 'inbound') || (cleanTo === cleanPlivoNum && cleanPlivoNum !== '');
+
+  if (isIncoming && !dialStatus && event.toLowerCase() !== 'hangup') {
+    let protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    let host = req.headers['host'] || req.get('host');
+    let baseUrl = `${protocol}://${host}`;
+    if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+    
+    console.log(`🔄 Inbound call detected on /answer. Redirecting to /incoming-call...`);
+    res.set('Content-Type', 'text/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${baseUrl}/incoming-call</Redirect>
+</Response>`);
+  }
+
   // --- FIX: ENHANCED AGENT NAME RESOLUTION (CASE-INSENSITIVE + KEY SEARCH) ---
   let inputAgent = req.query.agent || req.body.agent || '';
   if (!inputAgent) {
@@ -444,7 +499,7 @@ app.post('/answer', async (req, res) => {
   }
 
   // Initial Answer Request: return Dial XML
-  let to = req.body.To || req.body.to;
+  to = req.body.To || req.body.to || '';
 
   // Determine base URL for callbacks dynamically from request headers.
   // This automatically adapts to whatever domain (e.g. plivo-server-c3tp.onrender.com)
@@ -453,9 +508,7 @@ app.post('/answer', async (req, res) => {
   let host = req.headers['host'] || req.get('host');
   let baseUrl = `${protocol}://${host}`;
   if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-
   console.log('🌐 Base URL being used:', baseUrl);
-
   let isSip = false;
   if (to) {
     if (to.startsWith('sip:') || to.includes('@') || to.startsWith('zohoagent') || to.startsWith('edwinagent')) {
@@ -621,8 +674,6 @@ app.get('/calls', async (req, res) => {
   }
 });
 
-app.get('/status', (req, res) => res.json({ status: 'running' }));
-
 // ── PLAY RECORDING (Authenticated Proxy) ──────────────────────────────────────
 app.get('/play-recording', async (req, res) => {
   const { url } = req.query;
@@ -652,25 +703,14 @@ app.get('/play-recording', async (req, res) => {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-cache');
     
-    // Node built-in fetch response.body is a ReadableStream
-    // We can convert it to a Node Readable if needed, but in recent Express/Node
-    // we can use standard web stream pipe if supported or conversion.
-    // For Node 18+ global fetch:
-    const reader = response.body.getReader();
-    
-    // Helper to pipe Web Stream to Node Writable
-    const push = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          res.end();
-          break;
-        }
-        res.write(value);
-      }
-    };
-    
-    push();
+    // Convert built-in fetch response.body (ReadableStream) to Node.js Readable stream
+    // and pipe it directly to res. This handles client disconnects and backpressure automatically.
+    const audioStream = Readable.fromWeb(response.body);
+    audioStream.on('error', (err) => {
+      // Prevent crash if client aborts or terminates the connection mid-stream
+      console.warn('⚠️ Audio streaming interrupted or closed:', err.message);
+    });
+    audioStream.pipe(res);
     console.log('✅ Recording streaming started');
     
   } catch (err) {
@@ -679,14 +719,264 @@ app.get('/play-recording', async (req, res) => {
   }
 });
 
+// ── BROADCAST / HUNT GROUP SIMULTANEOUS DIALING ────────────────────────────────
+
+// Helper: Handle Ring Timeout & Fallback (Task 2 & 3)
+async function handleNoAgents(customerCallUUID, baseUrl) {
+  const callData = activeCalls.get(customerCallUUID);
+  if (!callData || callData.isAnswered) return;
+
+  // Mutex lock / atomic flag to prevent double processing
+  callData.isAnswered = true;
+
+  if (callData.timeoutId) {
+    clearTimeout(callData.timeoutId);
+  }
+
+  // Cancel all outstanding agent call legs
+  for (const agentCall of callData.agentsCalled) {
+    if (agentCall.status === 'ringing') {
+      try {
+        logEvent('agent_call_cancel', customerCallUUID, { agentName: agentCall.agentName, agentCallUUID: agentCall.callUUID });
+        if (client) {
+          await client.calls.hangup(agentCall.callUUID);
+        }
+        agentCall.status = 'cancelled';
+      } catch (err) {
+        console.error(`Failed to cancel agent call ${agentCall.callUUID}:`, err.message);
+      }
+    }
+  }
+
+  // Transfer the customer out of the conference to the fallback announcement/recording leg
+  if (client) {
+    try {
+      logEvent('customer_redirect_fallback', customerCallUUID, { reason: 'No agents answered within 30s' });
+      await client.calls.transfer(customerCallUUID, {
+        aleg_url: `${baseUrl}/fallback/${customerCallUUID}`,
+        aleg_method: 'POST'
+      });
+    } catch (err) {
+      console.error(`Failed to redirect customer call ${customerCallUUID}:`, err.message);
+    }
+  }
+}
+
+// 1. Incoming Call Webhook (Customer placement & Agent broadcast)
+app.post('/incoming-call', async (req, res) => {
+  const customerCallUUID = req.body.CallUUID;
+  const customerNumber = req.body.From || req.body.CallerName || 'Unknown';
+  const conferenceRoom = `conf_${customerCallUUID}`;
+
+  logEvent('incoming_call', customerCallUUID, { customerNumber, conferenceRoom });
+
+  // Get active agents with configured SIP/phone numbers
+  let agentRows = [];
+  try {
+    const result = await pool.query(
+      "SELECT name, number FROM agents WHERE role = 'agent' AND number <> ''"
+    );
+    agentRows = result.rows;
+  } catch (err) {
+    console.error('❌ Failed to fetch agents for broadcast:', err.message);
+  }
+
+  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  let host = req.headers['host'] || req.get('host');
+  let baseUrl = `${protocol}://${host}`;
+  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+
+  const callData = {
+    customerNumber,
+    conferenceRoom,
+    agentsCalled: [],
+    answeredBy: null,
+    callStartTime: new Date(),
+    isAnswered: false,
+    timeoutId: null
+  };
+
+  activeCalls.set(customerCallUUID, callData);
+
+  // Set 30s timeout (Task 3)
+  callData.timeoutId = setTimeout(async () => {
+    await handleNoAgents(customerCallUUID, baseUrl);
+  }, 30000);
+
+  // Broadcast dial to all active agents (Task 4: Gracefully handle offline SIP/numbers)
+  if (client) {
+    for (const agent of agentRows) {
+      try {
+        logEvent('agent_dial_start', customerCallUUID, { agentName: agent.name, number: agent.number });
+
+        const agentCall = await client.calls.create(
+          process.env.PLIVO_NUMBER, // from
+          agent.number, // to
+          `${baseUrl}/agent-answer/${customerCallUUID}?agentName=${encodeURIComponent(agent.name)}`, // answer_url
+          {
+            answerMethod: 'POST',
+            ringTimeout: 30
+          }
+        );
+
+        const callUuid = agentCall.requestUuid || agentCall.callUuid;
+        callData.agentsCalled.push({
+          agentName: agent.name,
+          callUUID: callUuid,
+          status: 'ringing'
+        });
+
+        logEvent('agent_dial_success', customerCallUUID, { agentName: agent.name, agentCallUUID: callUuid });
+      } catch (err) {
+        // Skip offline SIP / invalid number and log gracefully (Task 4)
+        console.error(`⚠️ Failed to dial agent ${agent.name} (${agent.number}):`, err.message);
+        logEvent('agent_dial_failed', customerCallUUID, { agentName: agent.name, error: err.message });
+      }
+    }
+  } else {
+    console.warn('⚠️ Plivo client not configured; simulated hunt group.');
+  }
+
+  // Serve XML to place the customer in the conference room with hold music
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak>Please wait while we connect you to an agent.</Speak>
+  <Conference redirect="false">${conferenceRoom}</Conference>
+</Response>`;
+
+  res.set('Content-Type', 'text/xml').send(xml);
+});
+
+// 2. Agent Answer Webhook (Mutex check, cancel remaining dials, bridge agent to conf)
+app.post('/agent-answer/:customerCallUUID', async (req, res) => {
+  const customerCallUUID = req.params.customerCallUUID;
+  const agentName = req.query.agentName || 'Agent';
+  const agentCallUUID = req.body.CallUUID;
+
+  const callData = activeCalls.get(customerCallUUID);
+
+  if (!callData) {
+    logEvent('agent_answer_rejected', customerCallUUID, { agentName, reason: 'Call structure not found' });
+    res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+    return;
+  }
+
+  // Mutex Lock check (Task 1: Prevent double answering)
+  if (callData.isAnswered) {
+    logEvent('agent_answer_race_lost', customerCallUUID, { agentName, reason: 'Call already answered by another agent' });
+    res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+    return;
+  }
+
+  // Acquire Lock
+  callData.isAnswered = true;
+  callData.answeredBy = agentName;
+
+  if (callData.timeoutId) {
+    clearTimeout(callData.timeoutId);
+  }
+
+  logEvent('agent_answer_race_won', customerCallUUID, { agentName, agentCallUUID });
+
+  // Hangup other ringing agent calls (Task 3)
+  for (const agentCall of callData.agentsCalled) {
+    if (agentCall.agentName === agentName) {
+      agentCall.status = 'answered';
+    } else if (agentCall.status === 'ringing') {
+      try {
+        logEvent('agent_call_cancel', customerCallUUID, { agentName: agentCall.agentName, agentCallUUID: agentCall.callUUID });
+        if (client) {
+          await client.calls.hangup(agentCall.callUUID);
+        }
+        agentCall.status = 'cancelled';
+      } catch (err) {
+        console.error(`Failed to hangup agent call ${agentCall.callUUID}:`, err.message);
+      }
+    }
+  }
+
+  // Log connected call record to DB
+  try {
+    await pool.query(
+      `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
+       VALUES ($1, $2, $3, 0, '', 'completed', 'Connected', NOW())
+       ON CONFLICT (id) DO UPDATE SET agent = EXCLUDED.agent, status = EXCLUDED.status, reason = EXCLUDED.reason`,
+      [customerCallUUID, agentName, callData.customerNumber]
+    );
+  } catch (err) {
+    console.error('❌ Failed to log call answer to database:', err.message);
+  }
+
+  // Return XML placing the winning agent in the same conference
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Conference redirect="true" action="/agent-hangup/${customerCallUUID}?agentName=${encodeURIComponent(agentName)}">${callData.conferenceRoom}</Conference>
+</Response>`;
+
+  res.set('Content-Type', 'text/xml').send(xml);
+});
+
+// 3. Fallback Route: Play Announcement & Record Voicemail (Task 2)
+app.post('/fallback/:customerCallUUID', (req, res) => {
+  const customerCallUUID = req.params.customerCallUUID;
+  logEvent('fallback_screen', customerCallUUID, { message: 'Playing voicemail announcement' });
+
+  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  let host = req.headers['host'] || req.get('host');
+  let baseUrl = `${protocol}://${host}`;
+  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Speak>All our agents are currently busy. Please leave your message after the tone.</Speak>
+  <Record action="${baseUrl}/voicemail-callback?customerCallUUID=${encodeURIComponent(customerCallUUID)}" maxLength="120" playBeep="true" />
+</Response>`;
+
+  res.set('Content-Type', 'text/xml').send(xml);
+});
+
+// 4. Voicemail Callback
+app.post('/voicemail-callback', async (req, res) => {
+  const customerCallUUID = req.query.customerCallUUID;
+  const recordingUrl = req.body.RecordUrl || req.body.RecordingUrl || '';
+  const duration = req.body.RecordingDuration || 0;
+
+  logEvent('voicemail_received', customerCallUUID, { recordingUrl, duration });
+
+  try {
+    const callData = activeCalls.get(customerCallUUID);
+    const customerNumber = callData ? callData.customerNumber : 'Unknown';
+    await pool.query(
+      `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
+       VALUES ($1, 'Voicemail', $2, $3, $4, 'voicemail', 'Voicemail Left', NOW())
+       ON CONFLICT (id) DO UPDATE SET recording_url = EXCLUDED.recording_url, status = 'voicemail'`,
+      [customerCallUUID, customerNumber, parseInt(duration) || 0, recordingUrl]
+    );
+  } catch (err) {
+    console.error('❌ Failed to save voicemail to database:', err.message);
+  }
+
+  // Clean up active calls
+  activeCalls.delete(customerCallUUID);
+
+  res.sendStatus(200);
+});
+
+// 5. Agent Hangup Webhook (Cleanup when conference session closes)
+app.post('/agent-hangup/:customerCallUUID', (req, res) => {
+  const customerCallUUID = req.params.customerCallUUID;
+  const agentName = req.query.agentName || 'Agent';
+
+  logEvent('agent_hangup', customerCallUUID, { agentName });
+
+  activeCalls.delete(customerCallUUID);
+
+  res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+});
+
 // ── FALLBACK ──────────────────────────────────────────────────────────────────
 app.use((req, res) => {
-  const distIndex = path.join(__dirname, '../dist/index.html');
-  if (fs.existsSync(distIndex)) {
-    res.sendFile(distIndex);
-  } else {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
-  }
+  res.sendFile(path.join(__dirname, '../public/index.html'));
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
