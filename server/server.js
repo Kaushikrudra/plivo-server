@@ -68,6 +68,7 @@ async function initDB() {
     await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`).catch(() => {});
     await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_url TEXT DEFAULT ''`).catch(() => {});
     await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0`).catch(() => {});
+    await pool.query(`ALTER TABLE agents ALTER COLUMN number TYPE VARCHAR(255)`).catch(() => {});
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS otps (
