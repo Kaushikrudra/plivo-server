@@ -1,1041 +1,1340 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
-import express from 'express';
-import plivo from 'plivo';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import pg from 'pg';
-import fs from 'fs';
-import { Readable } from 'stream';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edwin Calling Solution</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.plivo.com/sdk/browser/v2/plivo.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --premium-bg: #0f172a;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f8fafc;
+    }
+    .glass {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+    .key-btn {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .key-btn:active {
+      transform: scale(0.92);
+    }
+    .status-pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .5; transform: scale(1.05); }
+    }
+    .view-section { display: none; }
+    .view-section.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-dotenv.config();
+    /* Dialer Bottom Sheet Styles */
+    #dialerDrawer {
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      max-height: 420px;
+      border-radius: 2rem 2rem 0 0;
+    }
+    .drawer-closed { transform: translateY(110%); }
+    .drawer-open { transform: translateY(0); }
+    
+    .fab-btn {
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 20px 25px -5px rgba(37, 99, 235, 0.3);
+    }
+    .fab-btn:hover { transform: scale(1.1) rotate(5deg); }
+    .fab-btn:active { transform: scale(0.9); }
 
-const { Pool } = pg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-
-// ── In-Memory Active Call State Map ───────────────────────────────────────────
-const activeCalls = new Map();
-
-// ── Structured Logger Helper (Task 5) ─────────────────────────────────────────
-function logEvent(event, callUUID, metadata = {}) {
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    event,
-    callUUID,
-    ...metadata
-  };
-  console.log(`[StructuredLog] ${JSON.stringify(logEntry)}`);
-}
-
-// ── PostgreSQL Connection ─────────────────────────────────────────────────────
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false }
-});
-
-// ── Initialize Tables ─────────────────────────────────────────────────────────
-async function initDB() {
-  try {
-    await pool.query(`
-      
-      CREATE TABLE IF NOT EXISTS agents (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        username VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        number VARCHAR(50) DEFAULT '',
-        role VARCHAR(50) DEFAULT 'agent',
-        created_at TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS calls (
-        id VARCHAR(255) PRIMARY KEY,
-        agent VARCHAR(255),
-        "to" VARCHAR(50),
-        duration INTEGER DEFAULT 0,
-        recording_url TEXT DEFAULT '',
-        status VARCHAR(50) DEFAULT 'completed',
-        reason TEXT DEFAULT '',
-        time TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`).catch(() => {});
-    await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS recording_url TEXT DEFAULT ''`).catch(() => {});
-    await pool.query(`ALTER TABLE calls ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0`).catch(() => {});
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS otps (
-        username VARCHAR(255) PRIMARY KEY,
-        otp VARCHAR(10) NOT NULL,
-        expires_at TIMESTAMP NOT NULL
-      );
-    `);
-
-    const { rows } = await pool.query('SELECT COUNT(*) FROM agents');
-    if (parseInt(rows[0].count) === 0) {
-      await pool.query(`
-        INSERT INTO agents (name, username, password, role) VALUES
-        ('Administrator', 'admin', 'Admin@1234', 'admin'),
-        ('Agent 1', 'zohoagent170932965467135247620', 'Agent@1234', 'agent')
-        ON CONFLICT (username) DO NOTHING;
-      `);
-      console.log('✅ Default agents inserted');
+    #mobileOverlay {
+        display: none !important;
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+    }
+    #mobileOverlay.show {
+        display: block !important;
+        background: rgba(0,0,0,0.5);
     }
 
-    console.log('✅ Database initialized successfully');
-  } catch (err) {
-    console.error('❌ Database init error:', err.message);
-  }
-}
+    header {
+        position: relative !important;
+        z-index: 40 !important;
+        background-color: white !important;
+    }
 
-// ── Plivo Client ──────────────────────────────────────────────────────────────
-let client = null;
-if (process.env.PLIVO_AUTH_ID && process.env.PLIVO_AUTH_TOKEN) {
-  try {
-    client = new plivo.Client(process.env.PLIVO_AUTH_ID, process.env.PLIVO_AUTH_TOKEN);
-    console.log('✅ Plivo client initialized');
-  } catch (err) {
-    console.error('❌ Plivo init error:', err.message);
-  }
-}
+    @media (max-width: 1023px) {
+        #softphoneScreen {
+            display: block !important;
+            overflow-x: hidden !important;
+        }
+        #sidebar {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            width: 240px !important;
+            transform: translateX(-100%);
+            z-index: 40 !important;
+            transition: transform 0.3s ease !important;
+            display: flex !important;
+        }
+        #sidebar.mobile-open {
+            transform: translateX(0) !important;
+        }
+        .main-content {
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 100% !important;
+            flex: none !important;
+        }
+        header {
+            position: relative !important;
+            z-index: 50 !important;
+        }
+        .stats-grid {
+            grid-template-columns: 1fr !important;
+        }
+    }
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+    .play-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #eff6ff;
+      color: #2563eb;
+      border-radius: 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      transition: all 0.2s;
+    }
+    .play-btn:hover { background: #dbeafe; transform: translateY(-1px); }
 
-// ── HEALTH & STATUS ───────────────────────────────────────────────────────────
-app.get('/health', (req, res) => res.status(200).json({ status: 'ok', time: new Date() }));
-app.get('/status', (req, res) => {
-  const activeList = [];
-  const now = new Date();
-  for (const [customerCallUUID, callData] of activeCalls.entries()) {
-    const durationSeconds = Math.floor((now - callData.callStartTime) / 1000);
-    activeList.push({
-      customerCallUUID,
-      customerNumber: callData.customerNumber,
-      conferenceRoom: callData.conferenceRoom,
-      agentsCalled: callData.agentsCalled.map(a => ({
-        agentName: a.agentName,
-        callUUID: a.callUUID,
-        status: a.status
-      })),
-      answeredBy: callData.answeredBy,
-      callStartTime: callData.callStartTime.toISOString(),
-      durationSeconds
+    /* Toast Notification Styles */
+    #toastContainer {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      pointer-events: none;
+    }
+    .toast {
+      padding: 1rem 2rem;
+      border-radius: 1rem;
+      background: #10b981;
+      color: white;
+      font-weight: 700;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      opacity: 0;
+      transform: translateY(2rem);
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { background: #f43f5e; }
+  </style>
+</head>
+<body class="text-slate-800 antialiased">
+  <audio id="remoteAudio" autoplay></audio>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer"></div>
+  <div id="mobileOverlay" onclick="toggleSidebar()" class="fixed inset-0"></div>
+
+  <!-- Login Screen -->
+  <section id="loginScreen" class="min-h-screen flex items-center justify-center p-6 bg-[#0f172a] overflow-hidden relative">
+    <div class="absolute inset-0 opacity-20">
+        <div class="absolute top-[-10%] left-[-10%] w-[45%] h-[45%] bg-blue-600 rounded-full blur-[130px]"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-indigo-600 rounded-full blur-[130px]"></div>
+    </div>
+    
+    <div class="w-full max-w-md glass p-10 rounded-[2.5rem] shadow-2xl relative z-10 border-white/10">
+      <!-- Login Container -->
+      <div id="loginContainer">
+        <div class="text-center mb-10">
+          <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-3xl shadow-xl shadow-blue-500/20 mb-6">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+          </div>
+          <h1 class="text-3xl font-black text-slate-900 tracking-tight">Agent Portal</h1>
+          <p class="text-slate-500 mt-2 font-medium">Please sign in to continue</p>
+        </div>
+
+        <form class="space-y-6" id="loginForm">
+          <!-- Role Selection Toggle -->
+          <div class="flex p-1 bg-slate-100 rounded-2xl mb-8">
+              <button type="button" id="roleAgentBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all bg-white shadow-sm text-blue-600">User (Agent)</button>
+              <button type="button" id="roleAdminBtn" class="flex-1 py-3 rounded-xl text-sm font-bold transition-all text-slate-500 hover:text-slate-700">Administrator</button>
+              <input type="hidden" id="selectedRole" value="agent">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Username / ID</label>
+            <input id="agentIdInput" type="text" required placeholder="Enter username..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Access Password</label>
+            <input id="agentPasswordInput" type="password" required placeholder="••••••••" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          
+          <div class="flex items-center justify-between px-1">
+              <label class="flex items-center gap-2 cursor-pointer group">
+                  <input type="checkbox" id="rememberMe" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-xs font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Remember me</span>
+              </label>
+              <button type="button" id="forgotPasswordBtn" class="text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors">Forgot password?</button>
+          </div>
+
+          <div class="px-1">
+              <label class="flex items-start gap-3 cursor-pointer group">
+                  <input type="checkbox" id="acceptTerms" required class="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                  <span class="text-xs font-medium text-slate-500 leading-relaxed">
+                      I agree to the <a href="#" class="text-blue-600 hover:underline">Terms of Use</a> and 
+                      <a href="#" class="text-blue-600 hover:underline">Privacy Policy</a>
+                  </span>
+              </label>
+          </div>
+
+          <div id="loginError" class="hidden p-4 rounded-2xl bg-rose-50 text-rose-600 text-sm border border-rose-100 flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              <span id="errorMessage" class="font-bold">Invalid credentials, try again.</span>
+          </div>
+          <button type="submit" class="w-full py-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl font-black shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
+            Authenticate
+          </button>
+          
+          <div class="text-center mt-6">
+            <p class="text-sm text-slate-500 font-medium">Don't have an account? <button type="button" onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline transition-all">Sign up</button></p>
+          </div>
+        </form>
+      </div>
+
+      <!-- Signup Container -->
+      <div id="signupContainer" class="hidden">
+        <div class="text-center mb-10">
+          <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-3xl shadow-xl shadow-emerald-500/20 mb-6">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+          </div>
+          <h1 class="text-3xl font-black text-slate-900 tracking-tight">Admin Registration</h1>
+          <p class="text-slate-500 mt-2 font-medium">Create a new administrator account</p>
+        </div>
+
+        <form class="space-y-6" id="signupForm">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Full Name</label>
+            <input id="signupNameInput" type="text" required placeholder="Enter your full name..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Username / ID</label>
+            <input id="signupUsernameInput" type="text" required placeholder="Choose a username..." class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Access Password</label>
+            <input id="signupPasswordInput" type="password" required placeholder="••••••••" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+          </div>
+
+          <div id="otpSection" class="hidden">
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 ml-1">Verification OTP</label>
+            <input id="signupOtpInput" type="text" placeholder="123456" class="w-full px-5 py-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all tracking-widest font-mono text-center text-xl">
+            <p class="text-[10px] text-slate-400 mt-2 ml-1 text-center">OTP sent to configured mobile number</p>
+          </div>
+
+          <div id="signupError" class="hidden p-4 rounded-2xl bg-rose-50 text-rose-600 text-sm border border-rose-100 flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              <span id="signupErrorMessage" class="font-bold">Error creating account.</span>
+          </div>
+
+          <button type="button" id="sendOtpBtn" class="w-full py-5 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black shadow-lg shadow-slate-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
+            Send OTP
+          </button>
+
+          <button type="submit" id="registerAdminBtn" class="hidden w-full py-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-2xl font-black shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] uppercase text-sm tracking-widest">
+            Verify & Register Admin
+          </button>
+          
+          <div class="text-center mt-6">
+            <p class="text-sm text-slate-500 font-medium">Already have an account? <button type="button" onclick="toggleAuthMode()" class="text-blue-600 font-bold hover:underline transition-all">Log in</button></p>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Dashboard Screen -->
+  <main id="softphoneScreen" class="hidden min-h-screen flex w-full bg-slate-50">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-24 lg:w-72 bg-[#0f172a] flex flex-col items-center lg:items-start p-6 lg:p-8 transition-all relative z-30 shadow-2xl">
+        <div class="flex items-center gap-4 mb-12 overflow-hidden px-2">
+            <div class="bg-gradient-to-br from-blue-500 to-indigo-600 p-3 rounded-2xl shadow-xl shadow-blue-500/20 text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+            </div>
+            <span class="text-white font-black text-2xl tracking-tighter hidden lg:block bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">EdwinCalls</span>
+        </div>
+        <nav class="flex-1 space-y-4 w-full">
+            <button onclick="switchView('dashboard')" id="nav-dashboard" class="flex items-center gap-5 text-white bg-blue-600/10 text-blue-400 p-4 rounded-[1.25rem] w-full text-left transition-all group">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                <span class="font-bold text-sm hidden lg:block uppercase tracking-wider">Dashboard</span>
+            </button>
+            <button onclick="switchView('logs')" id="nav-logs" class="flex items-center gap-5 text-slate-400 hover:text-white hover:bg-white/5 p-4 rounded-[1.25rem] transition-all w-full text-left group">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span class="font-bold text-sm hidden lg:block uppercase tracking-wider">Call Records</span>
+            </button>
+            <button onclick="switchView('agents')" id="nav-agents" class="flex items-center gap-5 text-slate-400 hover:text-white hover:bg-white/5 p-4 rounded-[1.25rem] transition-all w-full text-left group">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                <span class="font-bold text-sm hidden lg:block uppercase tracking-wider">Team Hub</span>
+            </button>
+        </nav>
+        <div class="mt-auto w-full pt-4 border-t border-slate-800/50 lg:hidden">
+            <button onclick="logoutAgent()" class="flex items-center gap-5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 p-4 rounded-[1.25rem] w-full text-left transition-all group">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                <span class="font-bold text-sm uppercase tracking-wider">Logout</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Content Area -->
+    <div class="main-content flex-1 flex flex-col min-w-0 w-full overflow-hidden">
+        <!-- Top Bar -->
+        <header class="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-4 lg:px-8 shrink-0">
+            <div class="flex items-center gap-2 sm:gap-4">
+                <button onclick="toggleSidebar()" class="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <h2 id="viewTitle" class="text-base sm:text-lg font-bold text-slate-800 truncate max-w-[100px] sm:max-w-none">Dashboard</h2>
+                <div id="status" class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[10px] sm:text-xs font-bold border border-amber-100">
+                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-amber-500 rounded-full status-pulse"></span>
+                    <span id="statusText">Connecting</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 sm:gap-4">
+                <button onclick="logoutAgent()" class="sm:hidden p-2 text-slate-600 hover:text-rose-600 transition-colors" title="Logout">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                </button>
+                <button onclick="switchView('logs')" class="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </button>
+                <div class="h-8 w-[1px] bg-slate-200 mx-0.5 sm:mx-2"></div>
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <div class="text-right hidden sm:block">
+                        <p id="agentDisplayName" class="text-sm font-bold text-slate-800 leading-tight">Agent Name</p>
+                        <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Online</p>
+                        <button id="logoutButton" class="flex items-center gap-2 text-slate-600 hover:text-rose-600 transition-colors ml-auto group">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                            <span class="text-[11px] font-black uppercase tracking-tighter">Logout</span>
+                        </button>
+                    </div>
+                    <div id="agentInitial" class="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center text-white font-bold border border-slate-200 uppercase shadow-lg shadow-blue-500/20 text-xs sm:text-base">A</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Views Container -->
+        <div class="flex-1 overflow-hidden relative">
+            
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="view-section active h-full overflow-hidden relative bg-[#f8fafc]">
+                <!-- Background Decorative Blobs -->
+                <div class="absolute inset-0 overflow-hidden pointer-events-none opacity-[0.15]">
+                    <div class="absolute top-[-10%] left-[-5%] w-[300px] h-[300px] sm:w-[500px] sm:h-[500px] bg-blue-400 rounded-full blur-[100px] sm:blur-[150px]"></div>
+                    <div class="absolute bottom-[10%] right-[-5%] w-[250px] h-[250px] sm:w-[400px] sm:h-[400px] bg-indigo-400 rounded-full blur-[80px] sm:blur-[120px]"></div>
+                </div>
+
+                <div class="h-full p-3 sm:p-4 lg:p-6 overflow-y-auto relative z-10">
+                    <div class="stats-grid grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6 mb-8 w-full">
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-blue-100 w-full shadow-sm">
+                            <p class="text-[10px] sm:text-xs font-bold text-blue-500 uppercase tracking-widest mb-1">Total Calls</p>
+                            <h3 id="stat-total-calls" class="text-2xl sm:text-3xl font-black text-blue-900">0</h3>
+                        </div>
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-emerald-100 w-full shadow-sm">
+                            <p class="text-[10px] sm:text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Agents</p>
+                            <h3 id="stat-total-agents" class="text-2xl sm:text-3xl font-black text-emerald-900">0</h3>
+                        </div>
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-indigo-100 w-full shadow-sm">
+                            <p class="text-[10px] sm:text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Talk Time</p>
+                            <h3 id="stat-talk-time" class="text-2xl sm:text-3xl font-black text-indigo-900">0m</h3>
+                        </div>
+                        <div class="bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-3xl border border-amber-100 w-full shadow-sm">
+                            <p class="text-[10px] sm:text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">Status</p>
+                            <h3 class="text-2xl sm:text-3xl font-black text-amber-900 italic">Idle</h3>
+                        </div>
+                    </div>
+
+                    <!-- Analytics Charts -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 mb-8 w-full">
+                        <div class="bg-white p-5 sm:p-6 rounded-3xl border border-slate-100 shadow-sm w-full overflow-hidden">
+                            <h4 class="text-xs sm:text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>
+                                Call Volume Trends
+                            </h4>
+                            <div id="callVolumeChart" class="w-full"></div>
+                        </div>
+                        <div class="bg-white p-5 sm:p-6 rounded-3xl border border-slate-100 shadow-sm w-full overflow-hidden">
+                            <h4 class="text-xs sm:text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/></svg>
+                                Call Distribution
+                            </h4>
+                            <div id="statusDistChart" class="w-full"></div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between mb-6 px-1">
+                        <h3 class="text-lg sm:text-xl font-bold text-slate-900">Recent Activity</h3>
+                        <button onclick="switchView('logs')" class="text-xs sm:text-sm font-bold text-blue-600 hover:text-blue-700 underline">View All</button>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-3xl border border-slate-100 bg-white shadow-sm w-full">
+                        <table class="w-full text-left border-collapse min-w-[500px] sm:min-w-0">
+                            <thead>
+                                <tr class="bg-slate-50/50">
+                                    <th class="p-4 text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Time</th>
+                                    <th class="p-4 text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Number</th>
+                                    <th class="p-4 text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Duration</th>
+                                    <th class="p-4 text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentHistoryBody" class="divide-y divide-slate-50">
+                                <tr><td colspan="4" class="p-8 text-center text-slate-400 italic">No calls made yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Floating Dialer Toggle -->
+                <button id="dialerToggle" onclick="toggleDialer()" class="fab-btn fixed bottom-8 right-8 w-16 h-16 bg-blue-600 text-white rounded-2xl shadow-2xl shadow-blue-300 flex items-center justify-center z-40">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                </button>
+
+                <!-- Dialer Sheet -->
+                <div id="dialerDrawer" class="drawer-closed fixed bottom-0 right-8 w-full sm:w-[320px] glass z-50 shadow-2xl rounded-t-3xl border border-slate-200 flex flex-col overflow-hidden">
+                    <div class="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <h4 class="font-bold text-slate-700 flex items-center gap-2 text-xs"><div class="w-2 h-2 bg-emerald-500 rounded-full"></div>Dialer</h4>
+                        <button onclick="toggleDialer()" class="p-1 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                    </div>
+                    <div class="p-5 flex flex-col">
+                        <div class="text-center mb-4 relative">
+                            <div id="customerNameDisplay" class="text-[10px] font-semibold text-blue-600 mb-0.5 h-3"></div>
+                            <input id="numberInput" type="tel" placeholder="Enter number..." class="w-full text-center text-xl font-bold bg-transparent border-none outline-none placeholder:text-slate-300 text-slate-800 pr-8">
+                            <button onclick="backspaceNumber()" class="absolute right-0 top-1/2 -translate-y-1/2 p-2 text-slate-300 hover:text-slate-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414A2 2 0 0010.828 19H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z"/></svg>
+                            </button>
+                            <div id="timer" class="hidden text-slate-400 font-medium text-xs mt-0.5">00:00</div>
+                        </div>
+                        <div id="micBanner" class="hidden mb-3 p-2 bg-red-50 text-red-600 text-[10px] rounded-lg border border-red-100 text-center">Allow microphone access.</div>
+                        <div class="grid grid-cols-3 gap-2 mb-4">
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="1"><span class="text-base font-bold">1</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="2"><span class="text-base font-bold">2</span><span class="text-[6px] text-slate-400 uppercase">abc</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="3"><span class="text-base font-bold">3</span><span class="text-[6px] text-slate-400 uppercase">def</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="4"><span class="text-base font-bold">4</span><span class="text-[6px] text-slate-400 uppercase">ghi</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="5"><span class="text-base font-bold">5</span><span class="text-[6px] text-slate-400 uppercase">jkl</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="6"><span class="text-base font-bold">6</span><span class="text-[6px] text-slate-400 uppercase">mno</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="7"><span class="text-base font-bold">7</span><span class="text-[6px] text-slate-400 uppercase">pqrs</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="8"><span class="text-base font-bold">8</span><span class="text-[6px] text-slate-400 uppercase">tuv</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="9"><span class="text-base font-bold">9</span><span class="text-[6px] text-slate-400 uppercase">wxyz</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="*"><span class="text-base font-bold">*</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="0"><span class="text-base font-bold">0</span></button>
+                            <button class="key-btn h-10 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all" data-key="#"><span class="text-base font-bold">#</span></button>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="callButton" disabled class="h-11 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-emerald-100 transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Call</button>
+                                <button id="hangupButton" disabled class="h-11 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white rounded-xl flex items-center justify-center gap-2 text-xs font-bold shadow-lg shadow-rose-100 transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.952.952 0 01-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>End</button>
+                            </div>
+                            <button id="muteButton" disabled class="h-10 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl flex items-center justify-center gap-2 text-[11px] font-bold transition-all border border-slate-200"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>Mute</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Call Logs View -->
+            <div id="view-logs" class="view-section h-full p-8 overflow-y-auto">
+                <div class="max-w-6xl mx-auto">
+                    <div class="flex items-center justify-between mb-8">
+                        <div><h3 class="text-2xl font-bold text-slate-900">Full Call History</h3><p class="text-slate-500 mt-1">Review all communication records and recordings.</p></div>
+                        <button onclick="fetchHistory()" class="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 hover:bg-slate-50 rounded-2xl font-bold transition-all shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh Logs</button>
+                    </div>
+                    <!-- Filter Bar -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                        <div class="relative">
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Search Number</label>
+                            <input type="text" id="filterNumber" oninput="applyFilters()" placeholder="Search by phone..." class="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400 absolute left-4 bottom-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        </div>
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Filter by Agent</label><select id="filterAgent" onchange="applyFilters()" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"><option value="">All Agents</option></select></div>
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1.5 ml-1">Call Date</label><input type="date" id="filterDate" onchange="applyFilters()" class="w-full px-4 py-3 bg-slate-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                    </div>
+                    <div class="bg-white rounded-3xl border border-slate-200 overflow-x-auto shadow-sm">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="bg-slate-50/80 border-b border-slate-100"><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Date & Time</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Agent</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Customer Number</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Duration</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Recording</th></tr></thead>
+                            <tbody id="fullHistoryBody" class="divide-y divide-slate-50"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agents View -->
+            <div id="view-agents" class="view-section h-full p-8 overflow-y-auto">
+                <div class="max-w-6xl mx-auto">
+                    <div class="flex items-center justify-between mb-8"><div><h3 class="text-2xl font-bold text-slate-900">Agent Management</h3><p class="text-slate-500 mt-1">Add, remove or monitor agent accounts.</p></div></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                        <div class="glass p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-0">
+                            <h4 id="agentFormTitle" class="text-lg font-bold mb-6 text-slate-800 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>Create New Agent</h4>
+                            <form id="addAgentForm" class="space-y-4">
+                                <input type="hidden" id="editAgentOldUsername">
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Full Name</label><input type="text" id="newAgentName" required placeholder="Agent Name" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Username / ID</label><input type="text" id="newAgentUsername" required placeholder="zohoagent..." class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Assign Number</label><input type="text" id="newAgentNumber" placeholder="+91..." class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <div><label class="block text-xs font-bold text-slate-500 uppercase mb-2">Password</label><input type="password" id="newAgentPassword" required placeholder="••••••••" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"></div>
+                                <div class="flex gap-2">
+                                    <button type="submit" id="agentSubmitBtn" class="flex-1 py-4 bg-slate-900 hover:bg-black text-white rounded-xl font-bold transition-all shadow-lg active:scale-[0.98]">Save Account</button>
+                                    <button type="button" id="cancelEditBtn" class="hidden px-4 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold transition-all">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="lg:col-span-2 bg-white rounded-3xl border border-slate-200 overflow-x-auto shadow-sm">
+                            <table class="w-full text-left border-collapse">
+                                <thead><tr class="bg-slate-50/80 border-b border-slate-100"><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Agent Details</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Username</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider">Phone</th><th class="p-5 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Action</th></tr></thead>
+                                <tbody id="agentsTableBody" class="divide-y divide-slate-50"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+  <!-- Incoming Call Modal -->
+  <div id="incomingCallModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease]">
+      <div class="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center relative overflow-hidden">
+          <!-- Pulsing Ring Animation Background -->
+          <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+              <div class="w-64 h-64 border-4 border-emerald-500 rounded-full animate-ping"></div>
+          </div>
+          
+          <!-- Ringing Animation Icon -->
+          <div class="relative inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-full shadow-lg shadow-emerald-500/30 mb-6 animate-pulse">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1.01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+          </div>
+          
+          <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Incoming Call</h3>
+          <p id="incomingCallerNumber" class="text-2xl font-black text-white tracking-tight mb-8">Loading...</p>
+          
+          <!-- Action Buttons -->
+          <div class="grid grid-cols-2 gap-4 relative z-10">
+              <button onclick="acceptIncomingCall()" class="py-4 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Accept
+              </button>
+              <button onclick="rejectIncomingCall()" class="py-4 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-bold rounded-2xl shadow-lg shadow-rose-500/20 transition-all flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Reject
+              </button>
+          </div>
+      </div>
+  </div>
+  </main>
+
+  <script>
+    const SERVER = window.location.origin.startsWith('file') ? 'http://localhost:3000' : window.location.origin;
+    let plivoBrowserSdk = null;
+    let ringtone = null;
+    let timerInterval = null;
+    let timerSeconds = 0;
+    let sdkReady = false;
+    let callActive = false;
+    let loggedInAgent = null;
+    let availableAgents = [];
+    let allCalls = [];
+    let volumeChart = null;
+    let distChart = null;
+    let currentDialledNumber = '';
+    let isEditingAgent = false;
+
+    function stopRingtone() {
+        if (ringtone) {
+            ringtone.pause();
+            ringtone.currentTime = 0;
+            ringtone = null;
+        }
+    }
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type === 'error' ? 'error' : ''}`;
+        toast.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+            <span>${message}</span>
+        `;
+        container.appendChild(toast);
+        setTimeout(() => toast.classList.add('show'), 100);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 400);
+        }, 3000);
+    }
+
+    function initCharts() {
+        const volumeOptions = {
+            series: [{ name: 'Calls', data: [] }],
+            chart: { height: 280, type: 'area', toolbar: { show: false }, zoom: { enabled: false } },
+            colors: ['#3b82f6'],
+            dataLabels: { enabled: false },
+            stroke: { curve: 'smooth', width: 2 },
+            fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05 } },
+            xaxis: { categories: [], labels: { style: { colors: '#94a3b8', fontSize: '10px' } } },
+            yaxis: { labels: { style: { colors: '#94a3b8', fontSize: '10px' } } },
+            grid: { borderColor: '#f1f5f9' }
+        };
+        volumeChart = new ApexCharts(document.querySelector("#callVolumeChart"), volumeOptions);
+        volumeChart.render();
+
+        const distOptions = {
+            series: [0, 0],
+            chart: { height: 280, type: 'donut' },
+            labels: ['Answered', 'Failed'],
+            colors: ['#10b981', '#f43f5e'],
+            legend: { position: 'bottom', fontSize: '12px' },
+            dataLabels: { enabled: false },
+            plotOptions: { pie: { donut: { size: '75%' } } }
+        };
+        distChart = new ApexCharts(document.querySelector("#statusDistChart"), distOptions);
+        distChart.render();
+    }
+
+    function updateAnalytics(calls) {
+        if (!volumeChart || !distChart) return;
+        const groups = {};
+        calls.forEach(c => { const date = new Date(c.time).toLocaleDateString(); groups[date] = (groups[date] || 0) + 1; });
+        const categories = Object.keys(groups).slice(-7);
+        const data = categories.map(cat => groups[cat]);
+        volumeChart.updateSeries([{ data: data }]);
+        volumeChart.updateOptions({ xaxis: { categories: categories } });
+        const answered = calls.filter(c => c.status === 'completed' || c.status === 'answered').length;
+        const failed = calls.length - answered;
+        distChart.updateSeries([answered, failed]);
+    }
+
+    const views = { dashboard: document.getElementById('view-dashboard'), logs: document.getElementById('view-logs'), agents: document.getElementById('view-agents') };
+    const navButtons = { dashboard: document.getElementById('nav-dashboard'), logs: document.getElementById('nav-logs'), agents: document.getElementById('nav-agents') };
+
+    function switchView(viewName) {
+        Object.keys(views).forEach(v => { views[v].classList.remove('active'); navButtons[v].classList.remove('bg-blue-600/20', 'text-blue-400'); navButtons[v].classList.add('text-slate-400'); });
+        views[viewName].classList.add('active');
+        navButtons[viewName].classList.add('bg-blue-600/20', 'text-blue-400');
+        navButtons[viewName].classList.remove('text-slate-400');
+        document.getElementById('viewTitle').textContent = viewName.charAt(0).toUpperCase() + viewName.slice(1);
+        const fab = document.getElementById('dialerToggle');
+        if (viewName === 'dashboard') { fab.classList.remove('hidden'); } else { fab.classList.add('hidden'); closeDialer(); }
+        if (viewName === 'logs') fetchHistory();
+        if (viewName === 'agents') fetchAgents();
+        closeSidebar();
+    }
+
+    function toggleDialer() { const drawer = document.getElementById('dialerDrawer'); if (drawer.classList.contains('drawer-closed')) { document.getElementById('numberInput').value = ''; if (typeof updateButtons === 'function') updateButtons(); drawer.classList.remove('drawer-closed'); drawer.classList.add('drawer-open'); } else { drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); } }
+    function closeDialer() { const drawer = document.getElementById('dialerDrawer'); drawer.classList.remove('drawer-open'); drawer.classList.add('drawer-closed'); }
+
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+        const isOpen = sidebar.classList.toggle('mobile-open');
+        if (isOpen) {
+            overlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
+        } else {
+            overlay.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+    }
+
+    function closeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeSidebar();
+            closeDialer();
+        }
     });
-  }
-  res.json({ status: 'running', activeCalls: activeList });
-});
 
-app.use(express.static(path.join(__dirname, '../public')));
-
-// ── AGENTS & AUTH ─────────────────────────────────────────────────────────────
-
-// Send OTP Endpoint
-app.post('/send-otp', async (req, res) => {
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ error: 'Username is required for OTP' });
-
-  // Generate a 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  // Set expiration to 10 minutes from now
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-  try {
-    // Store OTP in database (upsert)
-    await pool.query(
-      `INSERT INTO otps (username, otp, expires_at) VALUES ($1, $2, $3)
-       ON CONFLICT (username) DO UPDATE SET otp = EXCLUDED.otp, expires_at = EXCLUDED.expires_at`,
-      [username, otp, expiresAt]
-    );
-
-    if (client) {
-      // TODO: CHANGE THIS NUMBER LATER TO THE ACTUAL COMPANY NUMBER
-      // Note: number change for otp
-      const targetNumber = '+919340284497'; 
-      const sourceNumber = process.env.PLIVO_NUMBER || targetNumber; // Fallback to target if sender not set
-
-      await client.messages.create(
-        sourceNumber, // src
-        targetNumber, // dst
-        `Your Edwin Calling Solution Admin Verification Code is: ${otp}. Valid for 10 minutes.` // text
-      );
-      console.log(`✉️ OTP ${otp} sent via Plivo to ${targetNumber} for user ${username}`);
-    } else {
-      console.warn(`⚠️ Plivo client not configured. Simulated OTP for ${username} is ${otp}`);
-    }
-
-    res.json({ success: true, message: 'OTP sent successfully' });
-  } catch (err) {
-    console.error('❌ Error sending OTP:', err);
-    res.status(500).json({ error: 'Failed to send OTP' });
-  }
-});
-
-app.get('/agents', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT id, name, username, number, role FROM agents ORDER BY created_at'
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const { rows } = await pool.query(
-      'SELECT id, name, username, number, role FROM agents WHERE username=$1 AND password=$2',
-      [username, password]
-    );
-    if (rows.length > 0) {
-      res.json({ success: true, agent: rows[0] });
-    } else {
-      res.status(401).json({ error: 'Invalid credentials' });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/agents', async (req, res) => {
-  const { name, username, password, number, role, otp } = req.body;
-  
-  if (!name || !username || !password) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
-  // Admin registration requires OTP verification
-  if (role === 'admin') {
-    if (!otp) {
-      return res.status(400).json({ error: 'OTP is required for Admin registration' });
-    }
-
-    try {
-      const { rows } = await pool.query('SELECT otp, expires_at FROM otps WHERE username = $1', [username]);
-      if (rows.length === 0) {
-        return res.status(400).json({ error: 'OTP not requested or expired' });
-      }
-
-      const storedOtpInfo = rows[0];
-      if (new Date() > new Date(storedOtpInfo.expires_at)) {
-        await pool.query('DELETE FROM otps WHERE username = $1', [username]);
-        return res.status(400).json({ error: 'OTP has expired' });
-      }
-
-      if (storedOtpInfo.otp !== otp) {
-        return res.status(400).json({ error: 'Invalid OTP' });
-      }
-
-      // OTP is valid, clean it up
-      await pool.query('DELETE FROM otps WHERE username = $1', [username]);
-    } catch (err) {
-      return res.status(500).json({ error: 'Error verifying OTP' });
-    }
-  }
-
-  try {
-    const { rows } = await pool.query(
-      'INSERT INTO agents (name, username, password, number, role) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [name, username, password, number || '', role || 'agent']
-    );
-    console.log(`👤 New agent created: ${username} (${role || 'agent'})`);
-    res.json(rows[0]);
-  } catch (err) {
-    if (err.code === '23505') {
-      res.status(400).json({ error: 'Agent ID already exists' });
-    } else {
-      res.status(500).json({ error: err.message });
-    }
-  }
-});
-
-app.put('/agents/:username', async (req, res) => {
-  const { username } = req.params;
-  const { name, password, number } = req.body;
-  try {
-    let query, params;
-    if (password) {
-      query = 'UPDATE agents SET name=$1, password=$2, number=$3 WHERE username=$4 RETURNING *';
-      params = [name, password, number || '', username];
-    } else {
-      query = 'UPDATE agents SET name=$1, number=$2 WHERE username=$3 RETURNING *';
-      params = [name, number || '', username];
-    }
-    const { rows } = await pool.query(query, params);
-    if (rows.length === 0) return res.status(404).json({ error: 'Agent not found' });
-    console.log(`✅ Agent updated: ${username}`);
-    res.json(rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/agents/:username', async (req, res) => {
-  const { username } = req.params;
-  try {
-    const { rowCount } = await pool.query('DELETE FROM agents WHERE username=$1', [username]);
-    if (rowCount === 0) return res.status(404).json({ error: 'Agent not found' });
-    console.log(`🗑️ Agent deleted: ${username}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── TOKEN ─────────────────────────────────────────────────────────────────────
-app.get('/token', async (req, res) => {
-  const requestedUsername = req.query.username;
-  try {
-    const { rows } = await pool.query(
-      'SELECT username, password, number FROM agents WHERE username=$1',
-      [requestedUsername]
-    );
-    let agent = rows[0];
-    if (!agent) {
-      const { rows: fallback } = await pool.query(
-        'SELECT username, password, number FROM agents WHERE role=$1 LIMIT 1',
-        ['agent']
-      );
-      agent = fallback[0];
-      if (!agent) return res.json({ username: '', password: '' });
-    }
-    
-    let sipUsername = agent.username;
-    if (agent.number && agent.number.includes('sip:')) {
-      const match = agent.number.match(/sip:(.+?)@/);
-      if (match && match[1]) sipUsername = match[1];
-    }
-    
-    console.log(`🔑 Token requested for: ${requestedUsername}, returning SIP user: ${sipUsername}`);
-    res.json({ username: sipUsername, password: agent.password });
-  } catch (err) {
-    console.error('❌ Token error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-  // ── HELPER: RESOLVE AGENT NAME FROM SIP OR USERNAME ───────────────────────────                                          
-    async function resolveAgentName(inputAgent, callId) {                                                                      
-      if (!inputAgent) return 'Agent';                                                                                         
-                                                                                                                               
-      // Extract username from SIP URI if present                                                                              
-      let cleanSipUser = inputAgent.trim();                                                                                    
-      if (cleanSipUser.startsWith('sip:')) {                                                                                   
-        const match = cleanSipUser.match(/sip:(.+?)@/);                                                                        
-        if (match && match[1]) cleanSipUser = match[1];                                                                        
-        else cleanSipUser = cleanSipUser.replace('sip:', '');                                                                  
-      }                                                                                                                        
-      if (cleanSipUser.includes('@')) {                                                                                        
-        cleanSipUser = cleanSipUser.split('@')[0];                                                                             
-      }                                                                                                                        
-                                                                                                                               
-      try {                                                                                                                    
-        // 1. Try to match by name or username first (high priority)                                                           
-        const { rows: nameOrUserRows } = await pool.query(                                                                     
-          `SELECT name FROM agents                                                                                             
-           WHERE LOWER(name) = LOWER($1)                                                                                       
-              OR LOWER(username) = LOWER($2)`,                                                                                 
-          [inputAgent.trim(), cleanSipUser]                                                                                    
-        );                                                                                                                     
-        if (nameOrUserRows.length > 0) {                                                                                       
-          return nameOrUserRows[0].name;                                                                                       
-        }                                                                                                                      
-                                                                                                                               
-        // 2. Try to match by number (low priority fallback)                                                                   
-        const { rows: numberRows } = await pool.query(                                                                         
-          `SELECT name FROM agents                                                                                             
-           WHERE number = $1                                                                                                   
-              OR (number <> '' AND number LIKE '%' || $1 || '%')`,                                                             
-          [inputAgent.trim()]                                                                                                  
-        );                                                                                                                     
-        if (numberRows.length > 0) {                                                                                           
-          return numberRows[0].name;                                                                                           
-        }                                                                                                                      
-                                                                                                                               
-        // 3. Check by callId fallback                                                                                         
-        if (callId) {                                                                                                          
-          const { rows: callRows } = await pool.query('SELECT agent FROM calls WHERE id=$1', [callId]);                        
-          if (callRows.length > 0 && callRows[0].agent && callRows[0].agent !== 'Unknown Agent') {                             
-            return callRows[0].agent;                                                                                          
-          }
+    window.addEventListener('resize', () => {
+        if (window.innerWidth >= 1024) {
+            closeSidebar();
         }
-      } catch (e) {
-        console.error('Agent lookup error:', e.message);
-      }
-      
-      return inputAgent;
+    });
+
+    function toggleAuthMode() {
+        const loginContainer = document.getElementById('loginContainer');
+        const signupContainer = document.getElementById('signupContainer');
+        loginContainer.classList.toggle('hidden');
+        signupContainer.classList.toggle('hidden');
+        
+        // Reset OTP state when toggling
+        const otpSection = document.getElementById('otpSection');
+        if (otpSection) {
+            otpSection.classList.add('hidden');
+            document.getElementById('registerAdminBtn').classList.add('hidden');
+            document.getElementById('sendOtpBtn').classList.remove('hidden');
+            document.getElementById('signupOtpInput').value = '';
+            document.getElementById('signupOtpInput').required = false;
+            document.getElementById('signupUsernameInput').readOnly = false;
+            isOtpSent = false;
+        }
     }
-  
-    
 
-// ── ANSWER ────────────────────────────────────────────────────────────────────
-app.post('/answer', async (req, res) => {
-  console.log('📞 Answer Webhook Received:', JSON.stringify(req.body));
-  
-  const event = req.body.Event || req.body.event || '';
-  const callStatus = req.body.CallStatus || req.body.call_status || '';
-  const dialStatus = req.body.DialStatus || req.body.dial_status || '';
-  const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
-  const callId = req.body.CallUUID || req.body.call_uuid || req.body.DialALegUUID;
+    let isOtpSent = false;
 
-  // Auto-detect incoming calls (customer calling the Plivo number) and redirect them to /incoming-call
-  const direction = req.body.Direction || req.body.direction || '';
-  let to = req.body.To || req.body.to || '';
-  const from = req.body.From || req.body.from || '';
-  const cleanTo = to.replace(/\D/g, '');
-  const cleanPlivoNum = (process.env.PLIVO_NUMBER || '').replace(/\D/g, '');
-  
-  // If caller (From) is a SIP URI or starts with agent naming conventions, it's an outbound call from an agent
-  const isSipCaller = from.toLowerCase().startsWith('sip:') || from.toLowerCase().startsWith('zohoagent') || from.toLowerCase().startsWith('edwinagent');
-  const isIncoming = !isSipCaller && ((direction.toLowerCase() === 'inbound') || (cleanTo === cleanPlivoNum && cleanPlivoNum !== ''));
+    const sendOtpBtn = document.getElementById('sendOtpBtn');
+    if (sendOtpBtn) {
+        sendOtpBtn.addEventListener('click', async () => {
+            const username = document.getElementById('signupUsernameInput').value.trim();
+            const errorDiv = document.getElementById('signupError');
+            const errorMsg = document.getElementById('signupErrorMessage');
+            
+            if (!username) {
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = 'Please enter a Username to receive OTP.';
+                return;
+            }
 
-  if (isIncoming && !dialStatus && event.toLowerCase() !== 'hangup') {
-    let protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    let host = req.headers['host'] || req.get('host');
-    let baseUrl = `${protocol}://${host}`;
-    if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-    
-    console.log(`🔄 Inbound call detected on /answer. Redirecting to /incoming-call...`);
-    res.set('Content-Type', 'text/xml');
-    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${baseUrl}/incoming-call</Redirect>
-</Response>`);
-  }
+            try {
+                const res = await fetch(`${SERVER}/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    showToast('OTP sent successfully!');
+                    errorDiv.classList.add('hidden');
+                    
+                    // Show OTP field
+                    document.getElementById('otpSection').classList.remove('hidden');
+                    document.getElementById('signupOtpInput').required = true;
+                    
+                    // Toggle buttons
+                    document.getElementById('sendOtpBtn').classList.add('hidden');
+                    document.getElementById('registerAdminBtn').classList.remove('hidden');
+                    
+                    // Lock username to prevent changing after OTP is sent for it
+                    document.getElementById('signupUsernameInput').readOnly = true;
+                    isOtpSent = true;
+                } else {
+                    errorDiv.classList.remove('hidden');
+                    errorMsg.textContent = data.error || 'Failed to send OTP.';
+                }
+            } catch (err) {
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = 'Connection error, could not send OTP.';
+            }
+        });
+    }
 
-  // --- FIX: ENHANCED AGENT NAME RESOLUTION (CASE-INSENSITIVE + KEY SEARCH) ---
-  let inputAgent = req.query.agent || req.body.agent || '';
-  if (!inputAgent) {
-    const findKey = (obj) => {
-      if (!obj) return null;
-      for (const key of Object.keys(obj)) {
-        const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalized.includes('agentname')) {
-          return obj[key];
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!isOtpSent) return;
+
+        const name = document.getElementById('signupNameInput').value.trim();
+        const username = document.getElementById('signupUsernameInput').value.trim();
+        const password = document.getElementById('signupPasswordInput').value.trim();
+        const otp = document.getElementById('signupOtpInput').value.trim();
+        const errorDiv = document.getElementById('signupError');
+        const errorMsg = document.getElementById('signupErrorMessage');
+
+        try {
+            const res = await fetch(`${SERVER}/agents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, username, password, role: 'admin', otp })
+            });
+            if (res.ok) {
+                showToast('Admin account created successfully! Please log in.');
+                toggleAuthMode();
+                // Pre-fill login with new username
+                document.getElementById('agentIdInput').value = username;
+                document.getElementById('agentPasswordInput').value = '';
+            } else {
+                const data = await res.json();
+                errorDiv.classList.remove('hidden');
+                errorMsg.textContent = data.error || 'Error creating account.';
+            }
+        } catch (err) {
+            errorDiv.classList.remove('hidden');
+            errorMsg.textContent = 'Connection error, please try again.';
         }
-      }
-      return null;
-    };
-    inputAgent = findKey(req.query) || findKey(req.body) || findKey(req.headers) || '';
-  }
-  if (!inputAgent) {
-    inputAgent = req.body.CallerName || req.body.From || '';
-  }
+    });
 
-  const agentName = await resolveAgentName(inputAgent, callId);
-  console.log(`👤 Resolved Agent Name: ${agentName} (from input: ${inputAgent})`);
+    function backspaceNumber() {
+        const input = document.getElementById('numberInput');
+        input.value = input.value.slice(0, -1);
+        updateButtons();
+    }
 
-                                                                                                                                                                   
-      // --- REDIAL LOOP PREVENTION ---                                                                                        
-      // If dialStatus is present, it means the dialed leg to the customer has ended.                                          
-      // We must return Hangup immediately to stop Plivo from looping and redialing.                                           
-      if (dialStatus) {                                                                                                        
-        console.log('🛑 Dial leg ended. DialStatus:', dialStatus, 'HangupCause:', hangupCause, '- Hanging up call to prevent redial.');                                                                                                                   
-        res.set('Content-Type', 'text/xml');                                                                                   
-        return res.send('<Response><Hangup/></Response>');                                                                     
-      }                                                                                                                        
-                                                                                                                               
-      if (event.toLowerCase() !== 'hangup' && event.toLowerCase() !== 'startapp' && event.toLowerCase() !== 'dialhangup') {    
-        if (                                                                                                                   
-          callStatus.toLowerCase() === 'cancel' ||
-          callStatus.toLowerCase() === 'completed' ||
-          dialStatus.toLowerCase() === 'busy' ||
-          dialStatus.toLowerCase() === 'cancel' ||
-          hangupCause === 'ORIGINATOR_CANCEL' ||
-          hangupCause === 'USER_BUSY' ||
-          (event.toLowerCase() === 'redirect' && (dialStatus.toLowerCase() === 'busy' || dialStatus.toLowerCase() ===          
-  'cancel'))
-        ) {
-          console.log('🛑 Stopping redial. Event:', event, 'Status:', callStatus, dialStatus);
-          res.set('Content-Type', 'text/xml');
-          return res.send('<Response><Hangup/></Response>');
-        }
-      }
+    async function logCall(status, duration = 0) {
+        if (!loggedInAgent || !currentDialledNumber) return;
+        try {
+            await fetch(`${SERVER}/log-call`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    to: currentDialledNumber,
+                    agent: loggedInAgent.name,
+                    status: status,
+                    duration: duration
+                })
+            });
+        } catch (e) { console.error('Error logging call', e); }
+    }
 
-  // --- HANGUP / SAVE LOGIC ---
-  if (event.toLowerCase() === 'hangup' || event.toLowerCase() === 'dialhangup' || callStatus.toLowerCase() === 'completed') {
-    let duration = req.body.Duration || req.body.duration || req.body.BillDuration || req.body.DialBillDuration || 0;
-    const rawTo = req.body.To 
-      || req.body.to 
-      || req.body['SIP-H-To']?.replace(/<|>/g, '').split(':')[1]?.split('@')[0]
-      || '';
-    const to = rawTo.replace(/\D/g, '').slice(-10); // keep last 10 digits
+    async function fetchAgents() {
+        const filterSelect = document.getElementById('filterAgent');
+        try {
+            const response = await fetch(`${SERVER}/agents`);
+            if (!response.ok) throw new Error('Failed to fetch');
+            availableAgents = await response.json();
+            const actualAgents = availableAgents.filter(a => a.role !== 'admin');
+            document.getElementById('stat-total-agents').textContent = actualAgents.length;
+            if (filterSelect) { filterSelect.innerHTML = '<option value="">All Agents</option>' + actualAgents.map(a => `<option value="${a.name}">${a.name}</option>`).join(''); }
+            const tbody = document.getElementById('agentsTableBody');
+            if (tbody) { 
+                tbody.innerHTML = actualAgents.map(a => `<tr class="hover:bg-slate-50/50 transition-colors">
+                    <td class="p-5"><div class="flex items-center gap-3"><div class="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-bold uppercase">${a.name[0]}</div><span class="font-bold text-slate-800">${a.name}</span></div></td>
+                    <td class="p-5 text-sm text-slate-500 font-mono">${a.username}</td>
+                    <td class="p-5 text-sm text-slate-500 max-w-[140px]"><span class="block truncate" title="${a.number || ''}">${a.number ? a.number.replace(/^sip:/, '').split('@')[0] : '<span class="text-slate-300 italic">None</span>'}</span></td>
+                    <td class="p-5 text-right flex justify-end gap-2 min-w-[80px]">
+                        <button onclick="editAgent('${a.username}', '${a.name}', '${a.number || ''}')" class="text-blue-400 hover:text-blue-600 p-2 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                        <button onclick="deleteAgent('${a.username}')" class="text-slate-300 hover:text-red-500 p-2 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                    </td></tr>`).join(''); 
+            }
+        } catch (e) { console.error('Error fetching agents', e); }
+    }
 
-    if (callId) {
-      try {
-        const mapStatus = (status, cause) => {
-          const s = (status || '').toLowerCase();
-          if (s === 'completed' || s === 'answered' || s === 'success') return 'completed';
-          if (cause === 'USER_BUSY') return 'failed';
-          if (cause === 'ORIGINATOR_CANCEL') return 'cancelled';
-          if (cause === 'NO_ANSWER') return 'failed';
-          return s || 'failed';
+    function editAgent(username, name, number) {
+        isEditingAgent = true;
+        document.getElementById('agentFormTitle').textContent = 'Modify Agent Details';
+        document.getElementById('agentSubmitBtn').textContent = 'Update Agent';
+        document.getElementById('cancelEditBtn').classList.remove('hidden');
+        document.getElementById('newAgentName').value = name;
+        document.getElementById('newAgentUsername').value = username;
+        document.getElementById('newAgentNumber').value = number;
+        document.getElementById('newAgentPassword').value = ''; 
+        document.getElementById('newAgentPassword').required = false; 
+        document.getElementById('editAgentOldUsername').value = username;
+        document.getElementById('newAgentUsername').disabled = true; 
+    }
+
+    function cancelAgentEdit() {
+        isEditingAgent = false;
+        document.getElementById('agentFormTitle').textContent = 'Create New Agent';
+        document.getElementById('agentSubmitBtn').textContent = 'Save Account';
+        document.getElementById('cancelEditBtn').classList.add('hidden');
+        document.getElementById('addAgentForm').reset();
+        document.getElementById('newAgentUsername').disabled = false;
+        document.getElementById('newAgentPassword').required = true;
+    }
+
+    document.getElementById('cancelEditBtn').addEventListener('click', cancelAgentEdit);
+
+    async function deleteAgent(username) { if (!confirm(`Are you sure you want to delete agent '${username}'?`)) return; try { const res = await fetch(`${SERVER}/agents/${username}`, { method: 'DELETE' }); if (res.ok) { showToast('Agent deleted successfully'); fetchAgents(); } else { const data = await res.json(); showToast(data.error || 'Failed to delete agent', 'error'); } } catch (e) { console.error('Delete Agent Error:', e); showToast('Failed to delete agent', 'error'); } }
+
+    function applyFilters() { const num = document.getElementById('filterNumber').value.toLowerCase(); const agent = document.getElementById('filterAgent').value; const date = document.getElementById('filterDate').value; const filtered = allCalls.filter(c => { const matchesNum = c.to.toLowerCase().includes(num); const matchesAgent = !agent || c.agent === agent; const matchesDate = !date || new Date(c.time).toLocaleDateString() === new Date(date).toLocaleDateString(); return matchesNum && matchesAgent && matchesDate; }); renderHistory(filtered); }
+
+    
+    function renderHistory(calls) {
+        const formatDuration = (sec) => {
+            if (!sec || sec == 0) return '0s';
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return m > 0 ? `${m}m ${s}s` : `${s}s`;
         };
 
-        const finalStatus = mapStatus(callStatus || dialStatus, hangupCause);
-        console.log(`💾 Saving call to DB: ${callId} | Agent: ${agentName} | Status: ${finalStatus} | Duration: ${duration}s`);
-
-        await pool.query(
-          `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time) 
-           VALUES ($1, $2, $3, $4, '', $5, $6, NOW()) 
-           ON CONFLICT (id) DO UPDATE SET 
-             agent = CASE WHEN calls.agent = 'Unknown Agent' OR calls.agent LIKE 'zohoagent%' THEN EXCLUDED.agent ELSE calls.agent END,
-             duration = CASE WHEN EXCLUDED.duration > 0 THEN EXCLUDED.duration ELSE calls.duration END, 
-             status = EXCLUDED.status,
-             reason = EXCLUDED.reason`,
-          [callId, agentName, to, parseInt(duration), finalStatus, hangupCause]
-        );
-        console.log(`✅ ${event} processed for Call: ${callId}`);
-      } catch (err) {
-        console.error('❌ Error saving data:', err.message);
-      }
-    }
-    return res.status(200).send('OK');
-  }
-
-  // Initial Answer Request: return Dial XML
-  to = req.body.To || req.body.to || '';
-
-  // Determine base URL for callbacks dynamically from request headers.
-  // This automatically adapts to whatever domain (e.g. plivo-server-c3tp.onrender.com)
-  // or local ngrok tunnel is being used to contact the server.
-  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  let host = req.headers['host'] || req.get('host');
-  let baseUrl = `${protocol}://${host}`;
-  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-  console.log('🌐 Base URL being used:', baseUrl);
-  let isSip = false;
-  if (to) {
-    if (to.startsWith('sip:') || to.includes('@') || to.startsWith('zohoagent') || to.startsWith('edwinagent')) {
-      isSip = true;
-      if (!to.startsWith('sip:')) {
-        to = to.includes('@') ? `sip:${to}` : `sip:${to}@phone.plivo.com`;
-      }
-    } else {
-      const hasPlus = to.startsWith('+');
-      const digits = to.replace(/\D/g, '');
-      if (hasPlus) to = '+' + digits;
-      else if (digits.length === 10) to = '+91' + digits;
-      else to = '+' + digits;
-    }
-  }
-
-  const dialElement = isSip ? `<User>${to}</User>` : `<Number>${to}</Number>`;
-  const recordingCallback = `${baseUrl}/recording?agent=${encodeURIComponent(agentName)}`;
-  const actionUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`;
-  const callbackUrl = `${baseUrl}/answer?agent=${encodeURIComponent(agentName)}`; // For status changes
-  
-  console.log('🎙️ Recording callback URL:', recordingCallback);
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial callerId="${process.env.PLIVO_NUMBER}" 
-        action="${actionUrl}" 
-        callbackUrl="${callbackUrl}"
-        callbackMethod="POST"
-        answerOnBridge="true" 
-        hangupOnStar="false" 
-        timeLimit="14400"
-        record="true"
-        recordFileFormat="mp3"
-        recordingCallbackUrl="${recordingCallback}"
-        recordingCallbackMethod="POST">
-    ${dialElement}
-  </Dial>
-</Response>`;
-
-  console.log(`📡 Sending XML for Agent: ${agentName} | action: ${actionUrl}`);
-  res.set('Content-Type', 'text/xml').send(xml);
-});
-
-app.get('/recording', (req, res) => {
-  res.json({ status: 'Recording endpoint is active' });
-});
-
-// ── RECORDING ─────────────────────────────────────────────────────────────────
-app.post('/recording', async (req, res) => {
-  console.log('🎙️ Recording webhook hit!', req.body.CallUUID, req.body.RecordingUrl);
-  console.log('⏺️ Recording Callback Full Data:', JSON.stringify(req.body));
-
-  const callId = req.body.CallUUID || req.body.call_uuid;
-  const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
-  
-  let inputAgent = req.query.agent || '';
-  if (!inputAgent) {
-    const findKey = (obj) => {
-      if (!obj) return null;
-      for (const key of Object.keys(obj)) {
-        const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalized.includes('agentname')) {
-          return obj[key];
-        }
-      }
-      return null;
-    };
-    inputAgent = findKey(req.query) || findKey(req.body) || findKey(req.headers) || '';
-  }
-  if (!inputAgent) {
-    inputAgent = req.body.From || req.body.CallerName || '';
-  }
-
-  const agentName = await resolveAgentName(inputAgent, callId);
-  console.log(`👤 Resolved Recording Agent Name: ${agentName} (from input: ${inputAgent})`);
-
-  let duration = req.body.RecordingDuration || req.body.duration || 0;
-  if (duration === '-1' || duration === -1) duration = 0;
-
-  const status = req.body.CallStatus || req.body.call_status || 'completed';
-  
-  let recordingUrl = req.body.RecordingUrl || req.body.RecordUrl || req.body.record_url || '';
-  if (recordingUrl) {
-    recordingUrl = recordingUrl.replace('api.plivo.com', 'media.plivo.com');
-  }
-
-  if (callId) {
-    console.log('🎙️ Processing Recording for:', {
-      callId: callId,
-      url: recordingUrl,
-      agent: agentName
-    });
-
-    try {
-      const result = await pool.query(
-        `UPDATE calls SET 
-          recording_url = $1,
-          duration = CASE WHEN $2 > 0 THEN $2 ELSE duration END
-         WHERE id = $3`,
-        [recordingUrl, parseInt(duration), callId]
-      );
-
-      if (result.rowCount === 0) {
-        console.log('⚠️ Call not found for recording, inserting:', callId);
-        await pool.query(
-          `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-           ON CONFLICT (id) DO UPDATE SET recording_url = EXCLUDED.recording_url, agent = CASE WHEN calls.agent = 'Unknown Agent' THEN EXCLUDED.agent ELSE calls.agent END`,
-          [callId, agentName, req.body.To || req.body.to || '', parseInt(duration), recordingUrl, status, hangupCause]
-        );
-      }
-      console.log('✅ Recording saved for:', callId);
-    } catch (err) {
-      console.error('❌ Save recording error:', err.message);
-    }
-  }
-  res.sendStatus(200);
-});
-
-// ── LOG CALL ──────────────────────────────────────────────────────────────────
-app.post('/log-call', async (req, res) => {
-  const { to, agent, status, duration } = req.body;
-  const callId = 'local_' + Date.now();
-  
-  try {
-    await pool.query(
-      'INSERT INTO calls (id, agent, "to", duration, recording_url, status, time) VALUES ($1,$2,$3,$4,$5,$6,NOW()) ON CONFLICT (id) DO NOTHING',
-      [callId, agent || 'Unknown Agent', to || '', parseInt(duration) || 0, '', status || 'completed']
-    );
-    res.json({ success: true, id: callId });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── CALLS ─────────────────────────────────────────────────────────────────────
-app.get('/calls', async (req, res) => {
-  const { username, role } = req.query;
-  try {
-    if (role === 'admin' || !username) {
-      const { rows } = await pool.query('SELECT id, agent, "to", duration, recording_url, status, reason, time FROM calls ORDER BY time DESC LIMIT 200');
-      return res.json(rows.map(r => ({
-        id: r.id, agent: r.agent, to: r.to,
-        duration: r.duration, recordingUrl: r.recording_url,
-        time: r.time, status: r.status, reason: r.reason
-      })));
-    }
-    const { rows: agentRows } = await pool.query(
-      'SELECT name FROM agents WHERE username=$1', [username]
-    );
-    const agentName = agentRows[0]?.name || username;
-    const { rows } = await pool.query(
-      'SELECT id, agent, "to", duration, recording_url, status, reason, time FROM calls WHERE LOWER(agent)=LOWER($1) ORDER BY time DESC LIMIT 200', [agentName]
-    );
-    res.json(rows.map(r => ({
-      id: r.id, agent: r.agent, to: r.to,
-      duration: r.duration, recordingUrl: r.recording_url,
-      time: r.time, status: r.status, reason: r.reason
-    })));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── PLAY RECORDING (Authenticated Proxy) ──────────────────────────────────────
-app.get('/play-recording', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'No URL provided' });
-  
-  try {
-    const authId = process.env.PLIVO_AUTH_ID || 'MANZI5ZJJKY2YTYZDKZC';
-    const authToken = process.env.PLIVO_AUTH_TOKEN || 'OTdlZDM1MmUtNmZhNC00NWNjLTZmZTEtMjU2MGEw';
-    const credentials = Buffer.from(`${authId}:${authToken}`).toString('base64');
-    const authHeader = `Basic ${credentials}`;
-    
-    const decodedUrl = decodeURIComponent(url);
-    console.log('🎵 Proxying recording:', decodedUrl);
-    
-    let response = await fetch(decodedUrl, {
-      headers: { 
-        'Authorization': authHeader,
-        'Accept': 'audio/mpeg, audio/*'
-      }
-    });
-    
-    if (response.status === 403) {
-      console.log('⚠️ Got 403, attempting to fetch fresh recording URL from Plivo API...');
-      let uuid = '';
-      try {
-        const parts = decodedUrl.split('/Recording/');
-        if (parts.length > 1) {
-          uuid = parts[1].replace('.mp3', '').split('?')[0];
-        }
-      } catch (err) {
-        console.error('Failed to extract UUID:', err.message);
-      }
-      
-      if (uuid) {
-        const plivoApiUrl = `https://api.plivo.com/v1/Account/${authId}/Recording/${uuid}/`;
-        console.log(`🌐 Fetching fresh recording details from: ${plivoApiUrl}`);
-        
-        const apiResponse = await fetch(plivoApiUrl, {
-          headers: {
-            'Authorization': authHeader,
-            'Accept': 'application/json'
-          }
-        });
-        
-        if (apiResponse.status === 404) {
-          console.error(`❌ Recording metadata returned 404 (recording deleted): ${uuid}`);
-          return res.status(404).json({ error: "Recording no longer available", status: 404 });
-        }
-        
-        if (apiResponse.ok) {
-          const apiData = await apiResponse.json();
-          let freshUrl = apiData.recording_url;
-          if (freshUrl) {
-            freshUrl = freshUrl.replace('api.plivo.com', 'media.plivo.com');
-            console.log(`✅ Got fresh recording URL: ${freshUrl}`);
+        const renderRow = (call) => {
+            const durationDisplay = formatDuration(call.duration);
             
-            response = await fetch(freshUrl, {
-              headers: { 
-                'Authorization': authHeader,
-                'Accept': 'audio/mpeg, audio/*'
-              }
+            const recordingControl = call.recordingUrl && call.recordingUrl !== '' ? `
+                <div class="flex items-center justify-end gap-2">
+                    <audio controls src="${SERVER}/play-recording?url=${encodeURIComponent(call.recordingUrl)}" class="h-8 w-44 sm:w-48" style="height: 32px; width: 180px;"></audio>
+                    <a href="${call.recordingUrl}" target="_blank" class="p-1.5 text-slate-400 hover:text-blue-500 transition-colors" title="Download/Open Original">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14\"/></svg>
+                    </a>
+                </div>
+            ` : '<span class="text-xs text-slate-300 italic">No recording</span>';
+
+            const reasonDisplay = call.reason && call.reason !== 'NORMAL_CLEARING' 
+                ? `<div class="text-[9px] text-slate-400 font-bold uppercase mt-0.5">${call.reason.replace(/_/g, ' ')}</div>` 
+                : '';
+
+            return `<tr class="hover:bg-slate-50 transition-colors">
+                <td class="p-5 text-sm text-slate-600">${new Date(call.time).toLocaleString()}</td>
+                <td class="p-5 text-sm font-bold text-slate-800">${call.agent || 'Agent'}</td>
+                <td class="p-5 text-sm font-bold text-blue-600">${call.to}</td>
+                <td class="p-5 text-sm text-slate-500">${durationDisplay}</td>
+                <td class="p-5 text-right">
+                    <div class="flex flex-col items-end gap-1">
+                        ${recordingControl}
+                        ${reasonDisplay}
+                    </div>
+                </td>
+            </tr>`;
+        };
+        document.getElementById('fullHistoryBody').innerHTML = calls.length ? calls.map(renderRow).join('') : '<tr><td colspan="5" class="p-12 text-center text-slate-400 italic">No calls match your filters.</td></tr>';
+    }
+
+    async function fetchHistory() {
+        if (!loggedInAgent) return;
+        try {
+            const response = await fetch(`${SERVER}/calls?username=${encodeURIComponent(loggedInAgent.username)}&role=${encodeURIComponent(loggedInAgent.role)}`);
+            allCalls = await response.json();
+            const displayCalls = allCalls;
+            document.getElementById('stat-total-calls').textContent = displayCalls.length;
+            const totalTalkTimeSec = displayCalls.reduce((acc, call) => acc + (typeof call.duration === 'number' ? call.duration : parseInt(call.duration) || 0), 0);
+            const totalTalkTimeMin = Math.round(totalTalkTimeSec / 60);
+            document.getElementById('stat-talk-time').textContent = totalTalkTimeMin + 'm';
+            updateAnalytics(displayCalls);
+
+            const recentBody = document.getElementById('recentHistoryBody');
+            if (displayCalls.length === 0) {
+                recentBody.innerHTML = '<tr><td colspan="4" class="p-8 text-center text-slate-400 italic">No calls made yet.</td></tr>';
+            } else {
+                const formatDurationShort = (sec) => {
+                    if (!sec || sec == 0) return '0s';
+                    const m = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+                };
+
+                const lastFive = displayCalls.slice(0, 5); // displayCalls is already reversed or needs slicing from start for most recent
+                recentBody.innerHTML = lastFive.map(call => {
+                    const durationDisplay = formatDurationShort(call.duration);
+                    return `<tr class="hover:bg-slate-50 transition-colors"><td class="p-4 text-sm text-slate-500">${new Date(call.time).toLocaleTimeString()}</td><td class="p-4 text-sm font-bold text-slate-800">${call.to}</td><td class="p-4 text-sm text-slate-500">${durationDisplay}</td><td class="p-4 text-right"><span class="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold uppercase">${call.status}</span></td></tr>`;
+                }).join('');
+            }
+            renderHistory(displayCalls);
+        } catch(e) { console.error('Error fetching logs', e); }
+    }
+
+    function setStatus(label, type) {
+        document.getElementById('statusText').textContent = label;
+        const s = document.getElementById('status');
+        s.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition-all ';
+        if (type === 'ready' || type === 'connected') { 
+            s.classList.add('bg-emerald-50', 'text-emerald-600', 'border-emerald-100'); 
+            s.querySelector('span:first-child').className = 'w-2 h-2 bg-emerald-500 rounded-full'; 
+        }
+        else if (type === 'error') { 
+            s.classList.add('bg-rose-50', 'text-rose-600', 'border-rose-100'); 
+            s.querySelector('span:first-child').className = 'w-2 h-2 bg-rose-500 rounded-full'; 
+        }
+        else { 
+            s.classList.add('bg-amber-50', 'text-amber-600', 'border-amber-100'); 
+            s.querySelector('span:first-child').className = 'w-2 h-2 bg-amber-500 rounded-full status-pulse'; 
+        }
+    }
+
+    function startTimer() { stopTimer(); timerSeconds = 0; document.getElementById('timer').classList.remove('hidden'); timerInterval = setInterval(() => { timerSeconds++; const m = String(Math.floor(timerSeconds/60)).padStart(2,'0'); const s = String(timerSeconds%60).padStart(2,'0'); document.getElementById('timer').textContent = `${m}:${s}`; }, 1000); }
+    function stopTimer() { if(timerInterval) clearInterval(timerInterval); document.getElementById('timer').classList.add('hidden'); }
+
+    let initAttempt = 0;
+    async function initPlivo() {
+        initAttempt++;
+        if (initAttempt > 3) {
+            showToast("Server unavailable. Please refresh.", "error");
+            setStatus("Offline", "error");
+            return;
+        }
+
+        try {
+            if (initAttempt > 1) showToast(`Reconnecting... (attempt ${initAttempt}/3)`, "info");
+            setStatus("Connecting...", "busy");
+
+            // 1. Wake up server
+            await fetch(`${SERVER}/health`).catch(() => {});
+
+            // 2. Fetch token
+            const res = await fetch(`${SERVER}/token?username=${loggedInAgent.username}`);
+            const creds = await res.json();
+
+            // 3. Cleanup old instance
+            if (plivoBrowserSdk) {
+                try { plivoBrowserSdk.destroy(); } catch(e) {}
+            }
+
+            plivoBrowserSdk = new window.Plivo({
+                debug: 'OFF',
+                permOnClick: true,
+                remoteAudioElement: document.getElementById('remoteAudio'),
+                audioConstraints: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
+                enableTracking: true,
+                closeProtection: false,
+                maxAverageBitrate: 64000
             });
-          }
-        } else {
-          console.error(`❌ Plivo API fetch failed with status: ${apiResponse.status}`);
+
+            let loginTimeout = setTimeout(() => {
+                console.warn("Login timeout - retrying...");
+                initPlivo();
+            }, 15000);
+
+            plivoBrowserSdk.client.on('onLogin', () => {
+                clearTimeout(loginTimeout);
+                initAttempt = 0;
+                sdkReady = true;
+                console.log('✅ Plivo Ready');
+                setStatus("Ready", "ready");
+                updateButtons();
+            });
+
+            plivoBrowserSdk.client.on('onLoginFailed', () => {
+                clearTimeout(loginTimeout);
+                sdkReady = false;
+                console.error('❌ Login failed');
+                // Retries up to 2 times (3 total attempts) with 5s delay
+                if (initAttempt < 3) {
+                    setTimeout(initPlivo, 5000);
+                } else {
+                    setStatus("Login Failed", "error");
+                    updateButtons();
+                }
+            });
+
+            plivoBrowserSdk.client.on('onCalling', () => { 
+                callActive = true; 
+                setStatus('Calling...', 'calling'); 
+                updateButtons(); 
+            });
+
+            plivoBrowserSdk.client.on('onCallAnswered', () => { 
+                setStatus('Connected', 'connected'); 
+                startTimer(); 
+                stopRingtone();
+                plivoBrowserSdk.client.unmute(); 
+            });
+
+            plivoBrowserSdk.client.on('onCallFailed', (reason) => { 
+                setStatus('Call Failed', 'error'); 
+                callActive = false; 
+                stopTimer(); 
+                stopRingtone(); 
+                updateButtons(); 
+                if (currentDialledNumber) logCall('failed', 0); 
+                currentDialledNumber = ''; 
+                setTimeout(() => { 
+                    fetchHistory(); 
+                    setStatus('Ready', 'ready'); 
+                }, 3000); 
+            });
+
+            plivoBrowserSdk.client.on('onCallTerminated', () => { 
+                setStatus(sdkReady ? 'Ready' : 'Connecting', sdkReady ? 'ready' : 'calling'); 
+                callActive = false; 
+                stopTimer(); 
+                stopRingtone(); 
+                updateButtons(); 
+                if (currentDialledNumber && timerSeconds < 2) logCall('completed', timerSeconds); 
+                currentDialledNumber = ''; 
+                setTimeout(() => fetchHistory(), 4000); 
+            });
+
+            plivoBrowserSdk.client.on('onIncomingCall', (callerId, extraHeaders, callInfo) => {
+                console.log('Incoming call from:', callerId);
+                if (!ringtone) {
+                    ringtone = new Audio('https://www.soundjay.com/phone/sounds/phone-ringing-1.mp3');
+                    ringtone.loop = true;
+                }
+                ringtone.play().catch(e => console.error('Ringtone play error:', e));
+                setStatus('Ringing...', 'calling');
+                showIncomingCallUI(callInfo);
+            });
+
+            plivoBrowserSdk.client.on('onIncomingCallCanceled', (callInfo) => {
+                console.log('Incoming call canceled:', callInfo);
+                stopRingtone();
+                hideIncomingCallUI();
+                setStatus(sdkReady ? 'Ready' : 'Connecting', sdkReady ? 'ready' : 'calling');
+            });
+
+            plivoBrowserSdk.client.login(creds.username, creds.password);
+
+        } catch (e) {
+            console.error('Init error:', e);
+            setTimeout(initPlivo, 8000);
         }
-      }
     }
-    
-    if (!response.ok) {
-      console.error('❌ Recording fetch failed:', response.status);
-      return res.status(response.status).json({ error: 'Recording not accessible' });
-    }
-    
-    // Stream the audio back to browser
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'no-cache');
-    
-    // Convert built-in fetch response.body (ReadableStream) to Node.js Readable stream
-    // and pipe it directly to res. This handles client disconnects and backpressure automatically.
-    const audioStream = Readable.fromWeb(response.body);
-    audioStream.on('error', (err) => {
-      // Prevent crash if client aborts or terminates the connection mid-stream
-      console.warn('⚠️ Audio streaming interrupted or closed:', err.message);
+
+    function updateButtons() { const hasNumber = document.getElementById('numberInput').value.trim().length > 0; document.getElementById('callButton').disabled = !sdkReady || callActive || !hasNumber; document.getElementById('hangupButton').disabled = !callActive; document.getElementById('muteButton').disabled = !callActive; }
+
+    // Role Toggle Logic
+    const roleAgentBtn = document.getElementById('roleAgentBtn');
+    const roleAdminBtn = document.getElementById('roleAdminBtn');
+    const selectedRoleInput = document.getElementById('selectedRole');
+
+    roleAgentBtn.addEventListener('click', () => {
+        selectedRoleInput.value = 'agent';
+        roleAgentBtn.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAgentBtn.classList.remove('text-slate-500');
+        roleAdminBtn.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAdminBtn.classList.add('text-slate-500');
     });
-    audioStream.pipe(res);
-    console.log('✅ Recording streaming started');
-    
-  } catch (err) {
-    console.error('❌ Recording proxy error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
 
-// ── BROADCAST / HUNT GROUP SIMULTANEOUS DIALING ────────────────────────────────
+    roleAdminBtn.addEventListener('click', () => {
+        selectedRoleInput.value = 'admin';
+        roleAdminBtn.classList.add('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAdminBtn.classList.remove('text-slate-500');
+        roleAgentBtn.classList.remove('bg-white', 'shadow-sm', 'text-blue-600');
+        roleAgentBtn.classList.add('text-slate-500');
+    });
 
-// Helper: Handle Ring Timeout & Fallback (Task 2 & 3)
-async function handleNoAgents(customerCallUUID, baseUrl) {
-  const callData = activeCalls.get(customerCallUUID);
-  if (!callData || callData.isAnswered) return;
+    // Forgot Password Logic
+    document.getElementById('forgotPasswordBtn').addEventListener('click', () => {
+        showToast('Please contact your system administrator to reset password.', 'error');
+    });
 
-  // Mutex lock / atomic flag to prevent double processing
-  callData.isAnswered = true;
-
-  if (callData.timeoutId) {
-    clearTimeout(callData.timeoutId);
-  }
-
-  // Cancel all outstanding agent call legs
-  for (const agentCall of callData.agentsCalled) {
-    if (agentCall.status === 'ringing') {
-      try {
-        logEvent('agent_call_cancel', customerCallUUID, { agentName: agentCall.agentName, agentCallUUID: agentCall.callUUID });
-        if (client) {
-          await client.calls.hangup(agentCall.callUUID);
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const acceptTerms = document.getElementById('acceptTerms').checked;
+        if (!acceptTerms) {
+            showToast('You must agree to the Terms & Conditions', 'error');
+            return;
         }
-        agentCall.status = 'cancelled';
-      } catch (err) {
-        console.error(`Failed to cancel agent call ${agentCall.callUUID}:`, err.message);
-      }
-    }
-  }
 
-  // Transfer the customer out of the conference to the fallback announcement/recording leg
-  if (client) {
-    try {
-      logEvent('customer_redirect_fallback', customerCallUUID, { reason: 'No agents answered within 30s' });
-      await client.calls.transfer(customerCallUUID, {
-        aleg_url: `${baseUrl}/fallback/${customerCallUUID}`,
-        aleg_method: 'POST'
-      });
-    } catch (err) {
-      console.error(`Failed to redirect customer call ${customerCallUUID}:`, err.message);
-    }
-  }
-}
+        const username = document.getElementById('agentIdInput').value.trim();
+        const password = document.getElementById('agentPasswordInput').value.trim();
+        const selectedRole = selectedRoleInput.value;
+        const rememberMe = document.getElementById('rememberMe').checked;
+        const errorDiv = document.getElementById('loginError');
+        const errorMsg = document.getElementById('errorMessage');
 
-// 1. Incoming Call Webhook (Customer placement & Agent broadcast)
-app.post('/incoming-call', async (req, res) => {
-  const customerCallUUID = req.body.CallUUID;
-  const customerNumber = req.body.From || req.body.CallerName || 'Unknown';
-  const conferenceRoom = `conf_${customerCallUUID}`;
+        try {
+            const res = await fetch(`${SERVER}/login`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ username, password }) 
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                const agent = data.agent;
 
-  logEvent('incoming_call', customerCallUUID, { customerNumber, conferenceRoom });
+                // Role mismatch check
+                if (agent.role !== selectedRole) {
+                    errorDiv.classList.remove('hidden');
+                    errorMsg.textContent = `Role mismatch: This account is not an ${selectedRole === 'admin' ? 'Administrator' : 'Agent'}.`;
+                    return;
+                }
 
-  // Get active agents with configured SIP/phone numbers
-  let agentRows = [];
-  try {
-    const result = await pool.query(
-      "SELECT name, number FROM agents WHERE role = 'agent' AND number <> ''"
-    );
-    agentRows = result.rows;
-  } catch (err) {
-    console.error('❌ Failed to fetch agents for broadcast:', err.message);
-  }
+                loggedInAgent = agent;
+                
+                if (rememberMe) {
+                    localStorage.setItem('loggedInAgent', JSON.stringify(agent));
+                } else {
+                    sessionStorage.setItem('loggedInAgent', JSON.stringify(agent));
+                }
 
-  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  let host = req.headers['host'] || req.get('host');
-  let baseUrl = `${protocol}://${host}`;
-  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-
-  const callData = {
-    customerNumber,
-    conferenceRoom,
-    agentsCalled: [],
-    answeredBy: null,
-    callStartTime: new Date(),
-    isAnswered: false,
-    timeoutId: null
-  };
-
-  activeCalls.set(customerCallUUID, callData);
-
-  // Set 30s timeout (Task 3)
-  callData.timeoutId = setTimeout(async () => {
-    await handleNoAgents(customerCallUUID, baseUrl);
-  }, 30000);
-
-  // Broadcast dial to all active agents (Task 4: Gracefully handle offline SIP/numbers)
-  if (client) {
-    for (const agent of agentRows) {
-      try {
-        logEvent('agent_dial_start', customerCallUUID, { agentName: agent.name, number: agent.number });
-
-        const agentCall = await client.calls.create(
-          process.env.PLIVO_NUMBER, // from
-          agent.number, // to
-          `${baseUrl}/agent-answer/${customerCallUUID}?agentName=${encodeURIComponent(agent.name)}`, // answer_url
-          {
-            answerMethod: 'POST',
-            ringTimeout: 30
-          }
-        );
-
-        const callUuid = agentCall.requestUuid || agentCall.callUuid;
-        callData.agentsCalled.push({
-          agentName: agent.name,
-          callUUID: callUuid,
-          status: 'ringing'
-        });
-
-        logEvent('agent_dial_success', customerCallUUID, { agentName: agent.name, agentCallUUID: callUuid });
-      } catch (err) {
-        // Skip offline SIP / invalid number and log gracefully (Task 4)
-        console.error(`⚠️ Failed to dial agent ${agent.name} (${agent.number}):`, err.message);
-        logEvent('agent_dial_failed', customerCallUUID, { agentName: agent.name, error: err.message });
-      }
-    }
-  } else {
-    console.warn('⚠️ Plivo client not configured; simulated hunt group.');
-  }
-
-  // Serve XML to place the customer in the conference room with hold music
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Speak>Please wait while we connect you to an agent.</Speak>
-  <Conference redirect="false">${conferenceRoom}</Conference>
-</Response>`;
-
-  res.set('Content-Type', 'text/xml').send(xml);
-});
-
-// 2. Agent Answer Webhook (Mutex check, cancel remaining dials, bridge agent to conf)
-app.post('/agent-answer/:customerCallUUID', async (req, res) => {
-  const customerCallUUID = req.params.customerCallUUID;
-  const agentName = req.query.agentName || 'Agent';
-  const agentCallUUID = req.body.CallUUID;
-
-  const callData = activeCalls.get(customerCallUUID);
-
-  if (!callData) {
-    logEvent('agent_answer_rejected', customerCallUUID, { agentName, reason: 'Call structure not found' });
-    res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
-    return;
-  }
-
-  // Mutex Lock check (Task 1: Prevent double answering)
-  if (callData.isAnswered) {
-    logEvent('agent_answer_race_lost', customerCallUUID, { agentName, reason: 'Call already answered by another agent' });
-    res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
-    return;
-  }
-
-  // Acquire Lock
-  callData.isAnswered = true;
-  callData.answeredBy = agentName;
-
-  if (callData.timeoutId) {
-    clearTimeout(callData.timeoutId);
-  }
-
-  logEvent('agent_answer_race_won', customerCallUUID, { agentName, agentCallUUID });
-
-  // Hangup other ringing agent calls (Task 3)
-  for (const agentCall of callData.agentsCalled) {
-    if (agentCall.agentName === agentName) {
-      agentCall.status = 'answered';
-    } else if (agentCall.status === 'ringing') {
-      try {
-        logEvent('agent_call_cancel', customerCallUUID, { agentName: agentCall.agentName, agentCallUUID: agentCall.callUUID });
-        if (client) {
-          await client.calls.hangup(agentCall.callUUID);
+                document.getElementById('loginScreen').classList.add('hidden');
+                document.getElementById('softphoneScreen').classList.remove('hidden');
+                document.getElementById('softphoneScreen').classList.add('flex');
+                document.getElementById('agentDisplayName').textContent = agent.name;
+                document.getElementById('agentInitial').textContent = agent.name[0];
+                if (agent.role === 'admin') {
+                    document.getElementById('dialerToggle').classList.add('hidden');
+                    document.getElementById('nav-agents').classList.remove('hidden');
+                    const agentsMetric = document.getElementById('stat-total-agents')?.closest('div');
+                    if (agentsMetric) agentsMetric.classList.remove('hidden');
+                    setStatus('Dashboard Active', 'ready');
+                } else {
+                    document.getElementById('dialerToggle').classList.remove('hidden');
+                    document.getElementById('nav-agents').classList.add('hidden');
+                    const agentsMetric = document.getElementById('stat-total-agents')?.closest('div');
+                    if (agentsMetric) agentsMetric.classList.add('hidden');
+                    setStatus('Connecting', 'calling');
+                    initPlivo();
+                }
+                showToast('Welcome back, ' + agent.name);
+                fetchHistory();
+                errorDiv.classList.add('hidden');
+            } else { 
+                const data = await res.json();
+                errorDiv.classList.remove('hidden'); 
+                errorMsg.textContent = data.error || 'Invalid credentials, try again.';
+            }
+        } catch(err) { 
+            errorDiv.classList.remove('hidden'); 
+            errorMsg.textContent = 'Connection error, please try again.';
         }
-        agentCall.status = 'cancelled';
-      } catch (err) {
-        console.error(`Failed to hangup agent call ${agentCall.callUUID}:`, err.message);
-      }
+    });
+
+    document.getElementById('addAgentForm').addEventListener('submit', async (e) => { 
+        e.preventDefault(); 
+        const name = document.getElementById('newAgentName').value; 
+        const username = document.getElementById('newAgentUsername').value; 
+        const password = document.getElementById('newAgentPassword').value; 
+        const number = document.getElementById('newAgentNumber').value;
+        const oldUsername = document.getElementById('editAgentOldUsername').value;
+
+        const payload = { name, username, number };
+        if (password) payload.password = password;
+
+        try { 
+            const url = isEditingAgent ? `${SERVER}/agents/${oldUsername}` : `${SERVER}/agents`;
+            const method = isEditingAgent ? 'PUT' : 'POST';
+
+            const res = await fetch(url, { 
+                method: method, 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify(payload) 
+            }); 
+            if(res.ok) { 
+                showToast(isEditingAgent ? 'Agent details updated' : 'New agent added successfully'); 
+                cancelAgentEdit();
+                fetchAgents(); 
+            } else {
+                const data = await res.json();
+                showToast(data.error || 'Failed to save agent', 'error');
+            }
+        } catch(e) { showToast('Failed to save agent', 'error'); } 
+    });
+
+    document.getElementById('callButton').addEventListener('click', async () => { 
+        const num = document.getElementById('numberInput').value.trim(); 
+        if(!num) return;
+
+        if (!sdkReady) {
+            showToast('Plivo SDK is not ready yet', 'error');
+            return;
+        }
+
+        try {
+            // Request microphone permissions explicitly
+            await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            
+            setStatus('Calling...', 'calling');
+            currentDialledNumber = num;
+            
+            const extraHeaders = {
+                'X-PH-AgentName': loggedInAgent.name
+            };
+
+            plivoBrowserSdk.client.call(num, extraHeaders);
+            callActive = true;
+            updateButtons();
+        } catch (e) {
+            console.error('Call Error:', e);
+            showToast('Microphone access denied or error initiating call', 'error');
+            setStatus('Ready', 'ready');
+        }
+    });
+
+    document.getElementById('hangupButton').addEventListener('click', () => { 
+        if(plivoBrowserSdk) {
+            plivoBrowserSdk.client.hangup();
+            stopRingtone();
+        } 
+    });
+    document.querySelectorAll('[data-key]').forEach(btn => { btn.addEventListener('click', () => { document.getElementById('numberInput').value += btn.dataset.key; updateButtons(); }); });
+    document.getElementById('numberInput').addEventListener('input', updateButtons);
+    function logoutAgent() {
+        localStorage.removeItem('loggedInAgent'); 
+        sessionStorage.removeItem('loggedInAgent');
+        location.reload(); 
     }
-  }
 
-  // Log connected call record to DB
-  try {
-    await pool.query(
-      `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
-       VALUES ($1, $2, $3, 0, '', 'completed', 'Connected', NOW())
-       ON CONFLICT (id) DO UPDATE SET agent = EXCLUDED.agent, status = EXCLUDED.status, reason = EXCLUDED.reason`,
-      [customerCallUUID, agentName, callData.customerNumber]
-    );
-  } catch (err) {
-    console.error('❌ Failed to log call answer to database:', err.message);
-  }
+    document.getElementById('logoutButton').addEventListener('click', logoutAgent);
 
-  // Return XML placing the winning agent in the same conference
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Conference redirect="true" action="/agent-hangup/${customerCallUUID}?agentName=${encodeURIComponent(agentName)}">${callData.conferenceRoom}</Conference>
-</Response>`;
+    window.onload = async () => {
+        await fetchAgents();
+        initCharts();
+        const savedAgent = localStorage.getItem('loggedInAgent') || sessionStorage.getItem('loggedInAgent');
+        if (savedAgent) {
+            const agent = JSON.parse(savedAgent);
+            loggedInAgent = agent;
+            document.getElementById('loginScreen').classList.add('hidden');
+            document.getElementById('softphoneScreen').classList.remove('hidden');
+            document.getElementById('softphoneScreen').classList.add('flex');
+            document.getElementById('agentDisplayName').textContent = agent.name;
+            document.getElementById('agentInitial').textContent = agent.name[0];
+            if (agent.role === 'admin') {
+                document.getElementById('dialerToggle').classList.add('hidden');
+                document.getElementById('nav-agents').classList.remove('hidden');
+                const agentsMetric = document.getElementById('stat-total-agents')?.closest('div');
+                if (agentsMetric) agentsMetric.classList.remove('hidden');
+                setStatus('Dashboard Active', 'ready');
+            } else {
+                document.getElementById('dialerToggle').classList.remove('hidden');
+                document.getElementById('nav-agents').classList.add('hidden');
+                const agentsMetric = document.getElementById('stat-total-agents')?.closest('div');
+                if (agentsMetric) agentsMetric.classList.add('hidden');
+                initPlivo();
+            }
+            fetchHistory();
+        }
+    };
 
-  res.set('Content-Type', 'text/xml').send(xml);
-});
+    let currentIncomingCallUUID = null;
 
-// 3. Fallback Route: Play Announcement & Record Voicemail (Task 2)
-app.post('/fallback/:customerCallUUID', (req, res) => {
-  const customerCallUUID = req.params.customerCallUUID;
-  logEvent('fallback_screen', customerCallUUID, { message: 'Playing voicemail announcement' });
+    function showIncomingCallUI(callInfo) {
+        currentIncomingCallUUID = callInfo.callUUID;
+        const callerNumber = (callInfo.src || 'Unknown').replace(/^sip:/, '').split('@')[0];
+        document.getElementById('incomingCallerNumber').textContent = callerNumber;
+        document.getElementById('incomingCallModal').classList.remove('hidden');
+    }
 
-  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  let host = req.headers['host'] || req.get('host');
-  let baseUrl = `${protocol}://${host}`;
-  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+    function hideIncomingCallUI() {
+        document.getElementById('incomingCallModal').classList.add('hidden');
+        currentIncomingCallUUID = null;
+    }
 
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Speak>All our agents are currently busy. Please leave your message after the tone.</Speak>
-  <Record action="${baseUrl}/voicemail-callback?customerCallUUID=${encodeURIComponent(customerCallUUID)}" maxLength="120" playBeep="true" />
-</Response>`;
+    function acceptIncomingCall() {
+        if (plivoBrowserSdk && currentIncomingCallUUID) {
+            plivoBrowserSdk.client.answer(currentIncomingCallUUID);
+            hideIncomingCallUI();
+            stopRingtone();
+            callActive = true;
+            updateButtons();
+        }
+    }
 
-  res.set('Content-Type', 'text/xml').send(xml);
-});
-
-// 4. Voicemail Callback
-app.post('/voicemail-callback', async (req, res) => {
-  const customerCallUUID = req.query.customerCallUUID;
-  const recordingUrl = req.body.RecordUrl || req.body.RecordingUrl || '';
-  const duration = req.body.RecordingDuration || 0;
-
-  logEvent('voicemail_received', customerCallUUID, { recordingUrl, duration });
-
-  try {
-    const callData = activeCalls.get(customerCallUUID);
-    const customerNumber = callData ? callData.customerNumber : 'Unknown';
-    await pool.query(
-      `INSERT INTO calls (id, agent, "to", duration, recording_url, status, reason, time)
-       VALUES ($1, 'Voicemail', $2, $3, $4, 'voicemail', 'Voicemail Left', NOW())
-       ON CONFLICT (id) DO UPDATE SET recording_url = EXCLUDED.recording_url, status = 'voicemail'`,
-      [customerCallUUID, customerNumber, parseInt(duration) || 0, recordingUrl]
-    );
-  } catch (err) {
-    console.error('❌ Failed to save voicemail to database:', err.message);
-  }
-
-  // Clean up active calls
-  activeCalls.delete(customerCallUUID);
-
-  res.sendStatus(200);
-});
-
-// 5. Agent Hangup Webhook (Cleanup when conference session closes)
-app.post('/agent-hangup/:customerCallUUID', (req, res) => {
-  const customerCallUUID = req.params.customerCallUUID;
-  const agentName = req.query.agentName || 'Agent';
-
-  logEvent('agent_hangup', customerCallUUID, { agentName });
-
-  activeCalls.delete(customerCallUUID);
-
-  res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
-});
-
-// ── FALLBACK ──────────────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
-// ── START ─────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  await initDB();
-});
+    function rejectIncomingCall() {
+        if (plivoBrowserSdk && currentIncomingCallUUID) {
+            plivoBrowserSdk.client.reject(currentIncomingCallUUID);
+            hideIncomingCallUI();
+            stopRingtone();
+            setStatus(sdkReady ? 'Ready' : 'Connecting', sdkReady ? 'ready' : 'calling');
+            updateButtons();
+        }
+    }
+  </script>
+</body>
+</html>
