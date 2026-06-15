@@ -538,17 +538,17 @@ app.post('/answer', async (req, res) => {
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Record action="${recordingCallback}" 
-          startOnDialAnswer="true" 
-          redirect="false" 
-          maxLength="14400" />
   <Dial callerId="${process.env.PLIVO_NUMBER}" 
         action="${actionUrl}" 
         callbackUrl="${callbackUrl}"
         callbackMethod="POST"
         answerOnBridge="true" 
         hangupOnStar="false" 
-        timeLimit="14400">
+        timeLimit="14400"
+        record="true"
+        recordFileFormat="mp3"
+        recordingCallbackUrl="${recordingCallback}"
+        recordingCallbackMethod="POST">
     ${dialElement}
   </Dial>
 </Response>`;
