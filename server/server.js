@@ -82,7 +82,7 @@ async function initDB() {
       await pool.query(`
         INSERT INTO agents (name, username, password, role) VALUES
         ('Administrator', 'admin', 'Admin@1234', 'admin'),
-        ('Agent 1', 'zohoagent170932965467135247620', 'Agent@1234', 'agent')
+       
         ON CONFLICT (username) DO NOTHING;
       `);
       console.log('✅ Default agents inserted');
