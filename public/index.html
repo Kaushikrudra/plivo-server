@@ -880,12 +880,15 @@
         const renderRow = (call) => {
             const durationDisplay = formatDuration(call.duration);
             
-            const recordingControl = call.recordingUrl && call.recordingUrl !== '' ? `
+            const isDeleted = !call.recordingUrl || call.recordingUrl === '';
+            const recordingControl = !isDeleted ? `
                 <div class="flex items-center justify-end gap-2">
-                    <audio controls src="${SERVER}/play-recording?url=${encodeURIComponent(call.recordingUrl)}" class="h-8 w-44 sm:w-48" style="height: 32px; width: 180px;"></audio>
-                    <a href="${call.recordingUrl}" target="_blank" class="p-1.5 text-slate-400 hover:text-blue-500 transition-colors" title="Download/Open Original">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14\"/></svg>
-                    </a>
+                    <audio 
+                        controls 
+                        src="${SERVER}/play-recording?url=${encodeURIComponent(call.recordingUrl)}" 
+                        class="h-8 w-44"
+                        onerror="this.parentElement.innerHTML='<span class=\\'text-xs text-red-300 italic\\'>Recording expired</span>'"
+                    ></audio>
                 </div>
             ` : '<span class="text-xs text-slate-300 italic">No recording</span>';
 
