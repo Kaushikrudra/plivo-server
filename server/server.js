@@ -83,7 +83,7 @@ async function initDB() {
       await pool.query(`
         INSERT INTO agents (name, username, password, role) VALUES
         ('Administrator', 'admin', 'Admin@1234', 'admin'),
-       
+        ('Agent 1', 'zohoagent170932965467135247620', 'Agent@1234', 'agent')
         ON CONFLICT (username) DO NOTHING;
       `);
       console.log('✅ Default agents inserted');
@@ -564,10 +564,20 @@ app.get('/recording', (req, res) => {
 
 // ── RECORDING ─────────────────────────────────────────────────────────────────
 app.post('/recording', async (req, res) => {
-  console.log('🎙️ Recording webhook hit!', req.body.CallUUID, req.body.RecordingUrl);
+  console.log('🎙️ Recording webhook hit!', req.body.CallUUID || req.body.ConferenceUUID, req.body.RecordingUrl);
   console.log('⏺️ Recording Callback Full Data:', JSON.stringify(req.body));
 
-  const callId = req.body.CallUUID || req.body.call_uuid;
+  let callId = req.body.CallUUID 
+    || req.body.call_uuid 
+    || req.body.ConferenceUUID 
+    || null;
+
+  // Clean conf_ prefix to match database call ID
+  if (req.body.ConferenceName && req.body.ConferenceName.startsWith('conf_')) {
+    callId = req.body.ConferenceName.replace('conf_', '');
+  } else if (callId && callId.startsWith('conf_')) {
+    callId = callId.replace('conf_', '');
+  }
   const hangupCause = req.body.HangupCause || req.body.hangup_cause || '';
   
   let inputAgent = req.query.agent || '';
@@ -627,6 +637,34 @@ app.post('/recording', async (req, res) => {
         );
       }
       console.log('✅ Recording saved for:', callId);
+
+      // Fix 3 — Long-term solution: Recordings download locally (non-blocking)
+      if (recordingUrl) {
+        (async () => {
+          try {
+            const authId = process.env.PLIVO_AUTH_ID || 'MANZI5ZJJKY2YTYZDKZC';
+            const authToken = process.env.PLIVO_AUTH_TOKEN || 'OTdlZDM1MmUtNmZhNC00NWNjLTZmZTEtMjU2MGEw';
+            const creds = Buffer.from(`${authId}:${authToken}`).toString('base64');
+            
+            const dlResp = await fetch(recordingUrl, {
+              headers: { 'Authorization': `Basic ${creds}` }
+            });
+            
+            if (dlResp.ok) {
+              const uuidMatch = recordingUrl.match(/Recording\/([a-f0-9-]+)\.mp3/i);
+              const uuid = uuidMatch ? uuidMatch[1] : callId;
+              const localPath = `/tmp/rec_${uuid}.mp3`;
+              const buffer = Buffer.from(await dlResp.arrayBuffer());
+              fs.writeFileSync(localPath, buffer);
+              console.log(`💾 Recording saved locally: ${localPath}`);
+            } else {
+              console.error(`❌ Failed to download recording: Status ${dlResp.status}`);
+            }
+          } catch (e) {
+            console.error('❌ Local recording save failed:', e.message);
+          }
+        })();
+      }
     } catch (err) {
       console.error('❌ Save recording error:', err.message);
     }
@@ -683,95 +721,93 @@ app.get('/calls', async (req, res) => {
 app.get('/play-recording', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'No URL provided' });
-  
-  try {
-    const authId = process.env.PLIVO_AUTH_ID || 'MANZI5ZJJKY2YTYZDKZC';
-    const authToken = process.env.PLIVO_AUTH_TOKEN || 'OTdlZDM1MmUtNmZhNC00NWNjLTZmZTEtMjU2MGEw';
-    const credentials = Buffer.from(`${authId}:${authToken}`).toString('base64');
-    const authHeader = `Basic ${credentials}`;
-    
-    const decodedUrl = decodeURIComponent(url);
-    console.log('🎵 Proxying recording:', decodedUrl);
-    
-    let response = await fetch(decodedUrl, {
-      headers: { 
-        'Authorization': authHeader,
-        'Accept': 'audio/mpeg, audio/*'
-      }
-    });
-    
-    if (response.status === 403) {
-      console.log('⚠️ Got 403, attempting to fetch fresh recording URL from Plivo API...');
-      let uuid = '';
-      try {
-        const parts = decodedUrl.split('/Recording/');
-        if (parts.length > 1) {
-          uuid = parts[1].replace('.mp3', '').split('?')[0];
-        }
-      } catch (err) {
-        console.error('Failed to extract UUID:', err.message);
-      }
-      
-      if (uuid) {
-        const plivoApiUrl = `https://api.plivo.com/v1/Account/${authId}/Recording/${uuid}/`;
-        console.log(`🌐 Fetching fresh recording details from: ${plivoApiUrl}`);
-        
-        const apiResponse = await fetch(plivoApiUrl, {
-          headers: {
-            'Authorization': authHeader,
-            'Accept': 'application/json'
-          }
-        });
-        
-        if (apiResponse.status === 404) {
-          console.error(`❌ Recording metadata returned 404 (recording deleted): ${uuid}`);
-          return res.status(404).json({ error: "Recording no longer available", status: 404 });
-        }
-        
-        if (apiResponse.ok) {
-          const apiData = await apiResponse.json();
-          let freshUrl = apiData.recording_url;
-          if (freshUrl) {
-            freshUrl = freshUrl.replace('api.plivo.com', 'media.plivo.com');
-            console.log(`✅ Got fresh recording URL: ${freshUrl}`);
-            
-            response = await fetch(freshUrl, {
-              headers: { 
-                'Authorization': authHeader,
-                'Accept': 'audio/mpeg, audio/*'
-              }
-            });
-          }
-        } else {
-          console.error(`❌ Plivo API fetch failed with status: ${apiResponse.status}`);
-        }
-      }
-    }
-    
-    if (!response.ok) {
-      console.error('❌ Recording fetch failed:', response.status);
-      return res.status(response.status).json({ error: 'Recording not accessible' });
-    }
-    
-    // Stream the audio back to browser
+
+  const authId = process.env.PLIVO_AUTH_ID || 'MANZI5ZJJKY2YTYZDKZC';
+  const authToken = process.env.PLIVO_AUTH_TOKEN || 'OTdlZDM1MmUtNmZhNC00NWNjLTZmZTEtMjU2MGEw';
+  const credentials = Buffer.from(`${authId}:${authToken}`).toString('base64');
+  const decodedUrl = decodeURIComponent(url);
+
+  // Extract recording UUID
+  const uuidMatch = decodedUrl.match(/Recording\/([a-f0-9-]+)\.mp3/i);
+  let uuid = uuidMatch ? uuidMatch[1] : null;
+
+  // Handle case where database had a local path previously saved (fallback support)
+  if (!uuid && decodedUrl.includes('/local-recording/')) {
+    const parts = decodedUrl.split('/local-recording/');
+    uuid = parts[parts.length - 1];
+  }
+
+  if (!uuid) return res.status(400).json({ error: 'Invalid recording URL format' });
+
+  const localPath = `/tmp/rec_${uuid}.mp3`;
+
+  // 1. If local cached copy exists, serve it directly
+  if (fs.existsSync(localPath)) {
+    console.log(`💾 Serving local cached recording: ${localPath}`);
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'no-cache');
-    
-    // Convert built-in fetch response.body (ReadableStream) to Node.js Readable stream
-    // and pipe it directly to res. This handles client disconnects and backpressure automatically.
-    const audioStream = Readable.fromWeb(response.body);
-    audioStream.on('error', (err) => {
-      // Prevent crash if client aborts or terminates the connection mid-stream
-      console.warn('⚠️ Audio streaming interrupted or closed:', err.message);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return fs.createReadStream(localPath).pipe(res);
+  }
+
+  try {
+    // 2. Fetch fresh signed URL from Plivo API
+    const apiUrl = `https://api.plivo.com/v1/Account/${authId}/Recording/${uuid}/`;
+    const apiResp = await fetch(apiUrl, {
+      headers: { 'Authorization': `Basic ${credentials}` }
     });
-    audioStream.pipe(res);
-    console.log('✅ Recording streaming started');
-    
+
+    if (apiResp.status === 404) {
+      return res.status(404).json({ error: 'Recording deleted from Plivo (older than 7 days)' });
+    }
+
+    let freshUrl = decodedUrl;
+    if (apiResp.ok) {
+      const apiData = await apiResp.json();
+      if (apiData.recording_url) {
+        freshUrl = apiData.recording_url;
+      }
+    }
+    freshUrl = freshUrl.replace('api.plivo.com', 'media.plivo.com');
+
+    // 3. Fetch the audio file from Plivo
+    const audioResp = await fetch(freshUrl, {
+      headers: { 'Authorization': `Basic ${credentials}` }
+    });
+
+    if (!audioResp.ok) {
+      return res.status(audioResp.status).json({ error: 'Audio fetch failed' });
+    }
+
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+
+    // Convert fetch body to arrayBuffer to stream and cache it simultaneously
+    const arrayBuffer = await audioResp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Save to local cache asynchronously in background
+    fs.writeFile(localPath, buffer, (err) => {
+      if (err) console.error(`❌ Failed to cache recording ${uuid}:`, err.message);
+      else console.log(`💾 Recording cached dynamically: ${localPath}`);
+    });
+
+    // Stream the buffer back to user
+    const stream = Readable.from(buffer);
+    stream.pipe(res);
+
   } catch (err) {
-    console.error('❌ Recording proxy error:', err.message);
+    console.error('❌ Play recording error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/local-recording/:callId', (req, res) => {
+  const filePath = `/tmp/rec_${req.params.callId}.mp3`;
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Local recording not found' });
+  }
+  res.setHeader('Content-Type', 'audio/mpeg');
+  fs.createReadStream(filePath).pipe(res);
 });
 
 // ── BROADCAST / HUNT GROUP SIMULTANEOUS DIALING ────────────────────────────────
@@ -853,6 +889,14 @@ app.post('/incoming-call', async (req, res) => {
 
   activeCalls.set(customerCallUUID, callData);
 
+  // Safety cleanup: delete from activeCalls in 10 minutes in case call webhooks are missed
+  setTimeout(() => {
+    if (activeCalls.has(customerCallUUID)) {
+      console.log(`🧹 activeCalls safety cleanup for: ${customerCallUUID}`);
+      activeCalls.delete(customerCallUUID);
+    }
+  }, 10 * 60 * 1000);
+
   // Set 30s timeout (Task 3)
   callData.timeoutId = setTimeout(async () => {
     await handleNoAgents(customerCallUUID, baseUrl);
@@ -893,10 +937,18 @@ app.post('/incoming-call', async (req, res) => {
   }
 
   // Serve XML to place the customer in the conference room with hold music
+  const recordingCallback = `${baseUrl}/recording?agent=Incoming`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Speak>Please wait while we connect you to an agent.</Speak>
-  <Conference redirect="false">${conferenceRoom}</Conference>
+  <Conference 
+    redirect="false"
+    record="true"
+    recordFileFormat="mp3"
+    recordingCallbackUrl="${recordingCallback}"
+    recordingCallbackMethod="POST">
+    ${conferenceRoom}
+  </Conference>
 </Response>`;
 
   res.set('Content-Type', 'text/xml').send(xml);
@@ -958,6 +1010,7 @@ app.post('/agent-answer/:customerCallUUID', async (req, res) => {
        ON CONFLICT (id) DO UPDATE SET agent = EXCLUDED.agent, status = EXCLUDED.status, reason = EXCLUDED.reason`,
       [customerCallUUID, agentName, callData.customerNumber]
     );
+    console.log(`✅ Call logged: ${customerCallUUID} answered by ${agentName}`);
   } catch (err) {
     console.error('❌ Failed to log call answer to database:', err.message);
   }
@@ -1025,6 +1078,11 @@ app.post('/agent-hangup/:customerCallUUID', (req, res) => {
   logEvent('agent_hangup', customerCallUUID, { agentName });
 
   activeCalls.delete(customerCallUUID);
+
+  // Safety cleanup — 5 min baad bhi delete (agar webhook miss ho)
+  setTimeout(() => {
+    activeCalls.delete(customerCallUUID);
+  }, 5 * 60 * 1000);
 
   res.set('Content-Type', 'text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
 });
