@@ -464,12 +464,13 @@ app.post('/answer', async (req, res) => {
 
   // --- HANGUP / SAVE LOGIC ---
   if (event.toLowerCase() === 'hangup' || event.toLowerCase() === 'dialhangup' || callStatus.toLowerCase() === 'completed') {
-    let duration = req.body.Duration || req.body.duration || req.body.BillDuration || req.body.DialBillDuration || 0;
-    const rawTo = req.body.To 
+   let duration = req.body.DialBLegDuration || req.body.Duration || req.body.duration || req.body.BillDuration || req.body.DialBillDuration || 0;
+    const rawTo = req.body.DialBLegTo   // outbound call ka actual customer number
+      || req.body.To 
       || req.body.to 
       || req.body['SIP-H-To']?.replace(/<|>/g, '').split(':')[1]?.split('@')[0]
       || '';
-    const to = rawTo.replace(/\D/g, '').slice(-10); // keep last 10 digits
+     const to = rawTo.replace(/\D/g, '').slice(-10); // keep last 10 digits
 
     if (callId) {
       try {
