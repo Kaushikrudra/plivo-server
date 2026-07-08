@@ -10,11 +10,11 @@ The dashboard handles inbound calls by routing them dynamically to all online ag
 
 ```mermaid
 sequenceDiagram
-    actor Customer as 📞 Customer
-    participant Plivo as 🌐 Plivo Voice API
-    participant Server as 🖥️ Express Backend
-    participant DB as 🗄️ PostgreSQL
-    actor Agent as 🧑‍💼 Online Agents
+    actor Customer as "📞 Customer"
+    participant Plivo as "🌐 Plivo Voice API"
+    participant Server as "🖥️ Express Backend"
+    participant DB as "🗄️ PostgreSQL"
+    actor Agent as "🧑‍💼 Online Agents"
 
     %% Inbound Call Flow
     note over Customer, Plivo: Inbound Call Flow
