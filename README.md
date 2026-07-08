@@ -13,7 +13,7 @@ sequenceDiagram
     actor Customer as 📞 Customer
     participant Plivo as 🌐 Plivo Voice API
     participant Server as 🖥️ Express Backend
-    database DB as 🗄️ PostgreSQL
+    participant DB as 🗄️ PostgreSQL
     actor Agent as 🧑‍💼 Online Agents
 
     %% Inbound Call Flow
